@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Broiler.Hosting.Windows</RootNamespace>
+    <AssemblyName>Broiler.Hosting.Windows</AssemblyName>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Description>Windows desktop hosting, clipboard, window sizing, appearance, input bridge, and accessibility provider for Broiler platform applications.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Broiler.Hosting.Windows.Tests" />
+    <InternalsVisibleTo Include="Broiler.Mail.Windows" />
+    <InternalsVisibleTo Include="Broiler.Mail.Windows.Tests" />
+    <InternalsVisibleTo Include="Broiler.Code.Windows" />
+    <InternalsVisibleTo Include="Broiler.Writer.Windows" />
+    <InternalsVisibleTo Include="Broiler.Browser.Windows" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Broiler.UI" />
+    <PackageReference Include="Broiler.UI.Standard" />
+    <PackageReference Include="Broiler.UI.Button" />
+    <PackageReference Include="Broiler.UI.ComboBox" />
+    <PackageReference Include="Broiler.UI.Edit" />
+    <PackageReference Include="Broiler.UI.ListView" />
+    <PackageReference Include="Broiler.UI.ListView.Standard" />
+    <PackageReference Include="Broiler.UI.RichEdit" />
+    <PackageReference Include="Broiler.UI.TabView" />
+    <PackageReference Include="Broiler.UI.TabView.Standard" />
+    <PackageReference Include="Broiler.Graphics" />
+    <PackageReference Include="Broiler.Graphics.Windows" />
+    <PackageReference Include="Broiler.Native.Windows" />
+    <PackageReference Include="Broiler.Input" />
+    <PackageReference Include="Broiler.Input.Keyboard" />
+  </ItemGroup>
+</Project>

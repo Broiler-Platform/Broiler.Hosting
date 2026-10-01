@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/Broiler.Hosting.Windows/Broiler.Hosting.Windows.csproj" />
+  <Project Path="src/Broiler.Hosting.Linux/Broiler.Hosting.Linux.csproj" />
+  <Project Path="tests/Broiler.Hosting.Windows.Tests/Broiler.Hosting.Windows.Tests.csproj" />
+  <Project Path="tests/Broiler.Hosting.Linux.Tests/Broiler.Hosting.Linux.Tests.csproj" />
+</Solution>
