@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Broiler.Hosting.Linux</RootNamespace>
+    <AssemblyName>Broiler.Hosting.Linux</AssemblyName>
+    <IsAotCompatible>true</IsAotCompatible>
+    <Description>Linux desktop hosting, X11 clipboard, evdev input coordinator, and diagnostics for Broiler platform applications.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Broiler.Hosting.Linux.Tests" />
+    <InternalsVisibleTo Include="Broiler.Mail.Linux" />
+    <InternalsVisibleTo Include="Broiler.Mail.Linux.Tests" />
+    <InternalsVisibleTo Include="Broiler.Code.Linux" />
+    <InternalsVisibleTo Include="Broiler.Writer.Linux" />
+    <InternalsVisibleTo Include="Broiler.Browser.Linux" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Broiler.UI" />
+    <PackageReference Include="Broiler.UI.Standard" />
+    <PackageReference Include="Broiler.Graphics" />
+    <PackageReference Include="Broiler.Graphics.Linux" />
+    <PackageReference Include="Broiler.Graphics.Linux.OpenGL" />
+    <PackageReference Include="Broiler.Native" />
+    <PackageReference Include="Broiler.Native.Linux" />
+    <PackageReference Include="Broiler.Input" />
+    <PackageReference Include="Broiler.Input.Linux" />
+    <PackageReference Include="Broiler.Input.Keyboard" />
+    <PackageReference Include="Broiler.Input.Keyboard.Linux" />
+    <PackageReference Include="Broiler.Input.Mouse" />
+    <PackageReference Include="Broiler.Input.Mouse.Linux" />
+  </ItemGroup>
+</Project>

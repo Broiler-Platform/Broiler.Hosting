@@ -24,13 +24,19 @@
     <PackageVersion Include="Broiler.UI.TabView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Graphics.Windows" Version="$(BroilerGraphicsVersion)" />
+    <PackageVersion Include="Broiler.Graphics.Linux" Version="$(BroilerGraphicsVersion)" />
+    <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Native" Version="$(BroilerNativeVersion)" />
     <PackageVersion Include="Broiler.Native.Windows" Version="$(BroilerNativeVersion)" />
+    <PackageVersion Include="Broiler.Native.Linux" Version="$(BroilerNativeVersion)" />
     <PackageVersion Include="Broiler.Input" Version="$(BroilerInputVersion)" />
     <PackageVersion Include="Broiler.Input.Keyboard" Version="$(BroilerInputVersion)" />
     <PackageVersion Include="Broiler.Input.Keyboard.Windows" Version="$(BroilerInputVersion)" />
+    <PackageVersion Include="Broiler.Input.Keyboard.Linux" Version="$(BroilerInputVersion)" />
     <PackageVersion Include="Broiler.Input.Mouse" Version="$(BroilerInputVersion)" />
     <PackageVersion Include="Broiler.Input.Mouse.Windows" Version="$(BroilerInputVersion)" />
+    <PackageVersion Include="Broiler.Input.Mouse.Linux" Version="$(BroilerInputVersion)" />
+    <PackageVersion Include="Broiler.Input.Linux" Version="$(BroilerInputVersion)" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

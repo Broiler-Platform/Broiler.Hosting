@@ -24,6 +24,13 @@ Provides Windows desktop hosting facilities:
   - Point hit-testing down to child elements and virtualized list items.
   - Dynamic peer lifecycle management and live region status announcements.
 
+### `Broiler.Hosting.Linux`
+Provides Linux desktop hosting facilities:
+- **`LinuxUiHost`**: Reusable `IUiHost` implementation adapting `IBroilerRenderer` and `IBroilerSurface` to Broiler UI sessions, tracking viewport dimensions, DPI scale, frame indexing, and invalidations without double-scaling.
+- **`LinuxX11Clipboard`**: Hardened X11 clipboard and primary selection host (`IUiClipboardHost`, `IDisposable`) with 1 MB payload limits, `INCR` streaming, UTF-8/Latin-1 conversion, timeout bounds, and safe non-Linux execution guards.
+- **`LinuxBackendDiagnostics`**: Preflight verification for X11/EGL/OpenGL dependencies (`libEGL.so.1`, `libGL.so.1`, `libOpenGL.so.0`, `libX11.so.6`, `DISPLAY`, architecture).
+- **`LinuxInputCoordinator` & `LinuxInputSnapshot`**: Evdev input stream coordination unifying keyboard and mouse devices, merging modifier keys across separate evdev nodes, pointer clamping, and non-blocking event dispatch.
+
 ## Architecture & Dependency Separation
 
 `Broiler.Hosting.Windows` follows strict unidirectional dependency layering:
