@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net10.0;net10.0-android36.0</TargetFrameworks>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Broiler.Hosting.Android</RootNamespace>
+    <AssemblyName>Broiler.Hosting.Android</AssemblyName>
+    <Description>Android hosting, SurfaceView, hardware-accelerated Canvas renderer, touch/pen/keyboard/IME input coordination, and diagnostics for Broiler platform applications.</Description>
+    <NoWarn Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">$(NoWarn);CS8601;CS8603;CS8604;CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Broiler.Hosting.Android.Tests" />
+    <InternalsVisibleTo Include="Broiler.Mail.Android" />
+    <InternalsVisibleTo Include="Broiler.Mail.Android.Tests" />
+    <InternalsVisibleTo Include="Broiler.Writer.Android" />
+    <InternalsVisibleTo Include="Broiler.Browser.Android" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Broiler.UI" />
+    <PackageReference Include="Broiler.Graphics" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
+    <PackageReference Include="Broiler.Input.Android" />
+    <PackageReference Include="Broiler.Input.Keyboard.Android" />
+    <PackageReference Include="Broiler.Input.Pen.Android" />
+    <PackageReference Include="Broiler.Input.Text.Android" />
+    <PackageReference Include="Broiler.Input.Touch.Android" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'">
+    <Compile Remove="Platform/**/*.cs" />
+  </ItemGroup>
+</Project>

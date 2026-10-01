@@ -1,6 +1,6 @@
 # Broiler.Hosting
 
-Shared desktop hosting runtime, windowing services, input fidelity, and platform integration for the Broiler application suite (**Broiler.Mail**, **Broiler.Code**, **Broiler.Writer**, **Broiler.Browser**).
+Shared desktop and mobile hosting runtime, windowing services, input fidelity, and platform integration for the Broiler application suite (**Broiler.Mail**, **Broiler.Code**, **Broiler.Writer**, **Broiler.Browser**).
 
 ## Components
 
@@ -31,14 +31,24 @@ Provides Linux desktop hosting facilities:
 - **`LinuxBackendDiagnostics`**: Preflight verification for X11/EGL/OpenGL dependencies (`libEGL.so.1`, `libGL.so.1`, `libOpenGL.so.0`, `libX11.so.6`, `DISPLAY`, architecture).
 - **`LinuxInputCoordinator` & `LinuxInputSnapshot`**: Evdev input stream coordination unifying keyboard and mouse devices, merging modifier keys across separate evdev nodes, pointer clamping, and non-blocking event dispatch.
 
+### `Broiler.Hosting.Android`
+Provides Android hosting facilities with multi-targeting support (`net10.0` for headless testing and `net10.0-android36.0` for full runtime integration):
+- **`AndroidUiHost`**: Reusable `IUiHost`, `IUiClipboardHost`, and `IUiTextInputHost` adapter supporting `AndroidBroilerView`, direct delegates, or headless surface/renderer.
+- **`AndroidBackendDiagnostics`**: Preflight check for Android runtime, architecture, and native graphic libraries (`libEGL.so`, `libGLESv3.so`, `libandroid.so`), with safe degradation on non-Android hosts.
+- **`AndroidBroilerView`**: Hardware-accelerated `SurfaceView` with Choreographer vsync loop, device lost recovery, density/viewport tracking, touch/hover/key routing, IME lifecycle, and clipboard glue.
+- **`AndroidCanvasRenderer`**: Hardware-accelerated `IBroilerRenderer` replaying display lists onto Android `Canvas` and `Paint` with typeface caching.
+- **`AndroidInputCoordinator`**: Unified coordinator routing touch contacts, pen contacts, key events, and IME text events into `UiInputEvent`s.
+- **`AndroidInsetLayout`**: `FrameLayout` handling display cutouts, navigation bars, and status bar insets.
+- **`BroilerInputConnection`**: `BaseInputConnection` bridging Android IME to `AndroidTextInputDevice`.
+
 ## Architecture & Dependency Separation
 
-`Broiler.Hosting.Windows` follows strict unidirectional dependency layering:
+`Broiler.Hosting` follows strict unidirectional dependency layering:
 ```
 UI Abstractions + Graphics + Native Platform
                    │
                    ▼
-         Broiler.Hosting.Windows
+       Broiler.Hosting.<Platform>
                    │
                    ▼
   Consumer Heads (Mail, Code, Writer, Browser)
@@ -50,4 +60,4 @@ Application-specific concerns (close/save guards, draft persistence, credential 
 ```powershell
 dotnet test Broiler.Hosting.slnx
 ```
-All unit tests in `tests/Broiler.Hosting.Windows.Tests` run headlessly and validate clipboard safety, sizing/DPI, system theme queries, input fidelity, and accessibility trees.
+All unit tests in `tests/Broiler.Hosting.Windows.Tests`, `tests/Broiler.Hosting.Linux.Tests`, and `tests/Broiler.Hosting.Android.Tests` run headlessly and validate clipboard safety, sizing/DPI, system theme queries, input fidelity, backend diagnostics, and accessibility trees across platforms.
