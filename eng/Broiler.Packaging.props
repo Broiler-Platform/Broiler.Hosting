@@ -1,0 +1,66 @@
+<Project>
+
+  <!--
+    ==================================================================
+    Broiler.Packaging.props
+    ==================================================================
+    Shared NuGet packaging metadata for Broiler.Hosting.
+    ==================================================================
+  -->
+
+  <PropertyGroup>
+    <!-- Version: lockstep across the whole suite during preview. -->
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>preview.1</VersionSuffix>
+
+    <!-- Identity -->
+    <Authors>Broiler contributors</Authors>
+    <Company>Broiler</Company>
+    <Product>Broiler</Product>
+    <Copyright>Copyright (c) Broiler contributors</Copyright>
+
+    <!-- License: SPDX expression, no embedded file needed. -->
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+
+    <!-- Project / repository links. -->
+    <PackageProjectUrl>https://github.com/Broiler-Platform/Broiler.Hosting</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <!-- README + icon are packed by the ItemGroup below. -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+
+    <!-- Packability by naming convention: every library packs
+         EXCEPT tests, demos, and diagnostics. -->
+    <IsPackable>true</IsPackable>
+    <IsPackable Condition="$(MSBuildProjectName.EndsWith('.Tests'))">false</IsPackable>
+    <IsPackable Condition="$(MSBuildProjectName.EndsWith('.Demo'))">false</IsPackable>
+    <IsPackable Condition="$(MSBuildProjectName.EndsWith('.Diagnostic'))">false</IsPackable>
+    <IsPackable Condition="$(MSBuildProjectName.EndsWith('.Benchmark'))">false</IsPackable>
+    <IsPackable Condition="$(MSBuildProjectName.EndsWith('.Benchmarks'))">false</IsPackable>
+
+    <!-- API docs shipped for IntelliSense. The XML-doc warnings are suppressed. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1570;CS1572;CS1573;CS1574;CS1587;CS1591;CS1734</NoWarn>
+
+    <!-- Symbol packages -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Reproducible builds + SourceLink -->
+    <Deterministic>true</Deterministic>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true' Or '$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!-- Files packed into every package (only when IsPackable is true). -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)icon.png"
+          Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)..\README.md"
+          Pack="true" PackagePath="\" Visible="false"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\README.md')" />
+  </ItemGroup>
+
+</Project>

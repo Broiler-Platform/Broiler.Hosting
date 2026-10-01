@@ -1,8 +1,32 @@
 <Solution>
-  <Project Path="src/Broiler.Hosting.Windows/Broiler.Hosting.Windows.csproj" />
-  <Project Path="src/Broiler.Hosting.Linux/Broiler.Hosting.Linux.csproj" />
-  <Project Path="src/Broiler.Hosting.Android/Broiler.Hosting.Android.csproj" />
-  <Project Path="tests/Broiler.Hosting.Windows.Tests/Broiler.Hosting.Windows.Tests.csproj" />
-  <Project Path="tests/Broiler.Hosting.Linux.Tests/Broiler.Hosting.Linux.Tests.csproj" />
-  <Project Path="tests/Broiler.Hosting.Android.Tests/Broiler.Hosting.Android.Tests.csproj" />
+  <Folder Name="/solution items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="NuGet.config" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+    <File Path=".gitignore" />
+  </Folder>
+  <Folder Name="/solution items/eng/">
+    <File Path="eng/Broiler.Packaging.props" />
+    <File Path="eng/pack.ps1" />
+    <File Path="eng/run-tests.ps1" />
+    <File Path="eng/resolve-preview-version.mjs" />
+    <File Path="eng/resolve-preview-version.test.mjs" />
+    <File Path="eng/verify-feed.ps1" />
+  </Folder>
+  <Folder Name="/solution items/.github/workflows/">
+    <File Path=".github/workflows/ci.yml" />
+    <File Path=".github/workflows/publish.yml" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Broiler.Hosting.Windows/Broiler.Hosting.Windows.csproj" />
+    <Project Path="src/Broiler.Hosting.Linux/Broiler.Hosting.Linux.csproj" />
+    <Project Path="src/Broiler.Hosting.Android/Broiler.Hosting.Android.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Broiler.Hosting.Windows.Tests/Broiler.Hosting.Windows.Tests.csproj" />
+    <Project Path="tests/Broiler.Hosting.Linux.Tests/Broiler.Hosting.Linux.Tests.csproj" />
+    <Project Path="tests/Broiler.Hosting.Android.Tests/Broiler.Hosting.Android.Tests.csproj" />
+  </Folder>
 </Solution>

@@ -1,4 +1,14 @@
 <Project>
+
+  <!-- Chain to a parent Directory.Build.props when one exists (in-tree build). -->
+  <PropertyGroup>
+    <BroilerParentBuildProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</BroilerParentBuildProps>
+  </PropertyGroup>
+  <Import Project="$(BroilerParentBuildProps)" Condition="'$(BroilerParentBuildProps)' != ''" />
+
+  <!-- Shared packaging props -->
+  <Import Project="$(MSBuildThisFileDirectory)eng\Broiler.Packaging.props" />
+
   <PropertyGroup>
     <TargetFramework Condition="'$(TargetFrameworks)' == ''">net10.0</TargetFramework>
     <Nullable>enable</Nullable>
@@ -9,8 +19,9 @@
     <Configurations>Debug;Release</Configurations>
     <Optimize Condition="$(Configuration.StartsWith('Release'))">true</Optimize>
     <PackageProjectUrl>https://github.com/Broiler-Platform/Broiler.Hosting</PackageProjectUrl>
-    <PackageTags>broiler;hosting;desktop;windows</PackageTags>
-    <VersionPrefix>0.1.0</VersionPrefix>
-    <VersionSuffix>preview.1</VersionSuffix>
+    <PackageTags>broiler;hosting;desktop;mobile;windows;linux;android</PackageTags>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
   </PropertyGroup>
+
 </Project>

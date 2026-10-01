@@ -1,0 +1,111 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version-suffix:
+        description: 'Optional preview.N (unused and at least the next preview). Empty selects automatically.'
+        type: string
+        default: ''
+      dry-run:
+        description: Validate and attach packages without pushing to the feed
+        type: boolean
+        default: true
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve preview version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      DRY_RUN: ${{ github.event_name == 'push' && 'false' || inputs.dry-run }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Require a NuGet.org API key
+        if: env.DRY_RUN != 'true'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_TOKEN }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then
+            echo "::error::Publishing to nuget.org needs the NUGET_API_KEY repository secret."
+            exit 1
+          fi
+      - name: Resolve version
+        id: version
+        env:
+          VERSION_SUFFIX: ${{ inputs.version-suffix }}
+        run: node eng/resolve-preview-version.mjs
+
+  validate:
+    name: Validate and pack
+    needs: version
+    uses: ./.github/workflows/ci.yml
+    with:
+      package-version: ${{ needs.version.outputs.version }}
+
+  publish:
+    name: Publish to NuGet.org
+    needs: [version, validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DRY_RUN: ${{ github.event_name == 'push' && 'false' || inputs.dry-run }}
+      PACKAGE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Download validated packages
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-packages
+          path: artifacts
+      - name: Verify consumer restore from the destination feed
+        shell: pwsh
+        run: ./eng/verify-feed.ps1 -Target nuget
+      - name: Push to NuGet.org
+        if: env.DRY_RUN != 'true'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_TOKEN }}
+        run: >
+          dotnet nuget push 'artifacts/*.nupkg'
+          --source https://api.nuget.org/v3/index.json
+          --api-key "$NUGET_API_KEY"
+      - name: Summary
+        run: |
+          {
+            echo "### Broiler.Hosting $PACKAGE_VERSION"
+            echo
+            if [ "$DRY_RUN" = "true" ]; then
+              echo 'Dry run: validated packages are attached; nothing was pushed.'
+            else
+              echo 'Published to NuGet.org.'
+            fi
+            echo
+            echo '```'
+            ls -1 artifacts
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

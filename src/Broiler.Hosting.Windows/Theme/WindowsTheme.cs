@@ -17,6 +17,9 @@ public static class WindowsTheme
 
     public static bool IsDarkThemePreferred()
     {
+        if (!OperatingSystem.IsWindows())
+            return false;
+
         try
         {
             using var personalization = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
@@ -33,20 +36,24 @@ public static class WindowsTheme
         UiColorScheme scheme = IsDarkThemePreferred() ? UiColorScheme.Dark : UiColorScheme.Light;
 
         bool highContrast = false;
-        try
-        {
-            var hc = new HighContrast { cbSize = (uint)Marshal.SizeOf<HighContrast>() };
-            if (SystemParametersInfoW(0x0042 /* SPI_GETHIGHCONTRAST */, hc.cbSize, ref hc, 0))
-                highContrast = (hc.dwFlags & 1 /* HCF_HIGHCONTRASTON */) != 0;
-        }
-        catch { }
-
         bool animationsEnabled = true;
-        try
+
+        if (OperatingSystem.IsWindows())
         {
-            SystemParametersInfoBool(0x1042 /* SPI_GETCLIENTAREAANIMATION */, 0, ref animationsEnabled, 0);
+            try
+            {
+                var hc = new HighContrast { cbSize = (uint)Marshal.SizeOf<HighContrast>() };
+                if (SystemParametersInfoW(0x0042 /* SPI_GETHIGHCONTRAST */, hc.cbSize, ref hc, 0))
+                    highContrast = (hc.dwFlags & 1 /* HCF_HIGHCONTRASTON */) != 0;
+            }
+            catch { }
+
+            try
+            {
+                SystemParametersInfoBool(0x1042 /* SPI_GETCLIENTAREAANIMATION */, 0, ref animationsEnabled, 0);
+            }
+            catch { }
         }
-        catch { }
 
         return new UiSystemSettings(
             ContrastPreference: highContrast ? UiContrastPreference.More : UiContrastPreference.NoPreference,

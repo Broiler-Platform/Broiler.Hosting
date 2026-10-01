@@ -1,7 +1,25 @@
-bin/
-obj/
+# Build output
+[Bb]in/
+[Oo]bj/
+win-x64
+net10.0
+net10.0-windows
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
 *.user
 *.suo
-.vs/
-.vscode/
+*.pubxml
+
+# Test / publish artifacts
+[Pp]ublish/
+artifacts/
+test-results/
 TestResults/
+*.binlog
+
+# NuGet pack output
+*.nupkg
+*.snupkg
