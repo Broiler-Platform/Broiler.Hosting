@@ -203,6 +203,7 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaIsOffscreenPropertyId => semantic.State.HasFlag(UiSemanticState.Offscreen) || !AutomationExposure.IsExposed(element),
             UiaNative.UiaIsPasswordPropertyId => element is UiEdit { IsPassword: true },
             UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
+            UiaNative.UiaLiveSettingPropertyId => StatusAnnouncements.LiveSettingFor(semantic) is var live and not LiveSetting.Off ? (int)live : null,
             _ => null,
         };
     }

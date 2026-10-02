@@ -56,6 +56,34 @@ public enum ExpandCollapseState
     LeafNode = 3,
 }
 
+/// <summary>UIA <c>NotificationKind</c>: what a notification event reports.</summary>
+public enum NotificationKind
+{
+    ItemAdded = 0,
+    ItemRemoved = 1,
+    ActionCompleted = 2,
+    ActionAborted = 3,
+    Other = 4,
+}
+
+/// <summary>UIA <c>NotificationProcessing</c>: how a client queues a notification against earlier ones.</summary>
+public enum NotificationProcessing
+{
+    ImportantAll = 0,
+    ImportantMostRecent = 1,
+    All = 2,
+    MostRecent = 3,
+    CurrentThenMostRecent = 4,
+}
+
+/// <summary>UIA <c>LiveSetting</c>: whether and how politely a live region's changes are read.</summary>
+public enum LiveSetting
+{
+    Off = 0,
+    Polite = 1,
+    Assertive = 2,
+}
+
 public enum StructureChangeType
 {
     ChildAdded = 0,
@@ -251,6 +279,7 @@ internal static partial class UiaNative
     public const int UiaIsOffscreenPropertyId = 30022;
     public const int UiaOrientationPropertyId = 30023;
     public const int UiaItemStatusPropertyId = 30028;
+    public const int UiaLiveSettingPropertyId = 30135;
 
     // Pattern Property IDs
     public const int UiaValueValuePropertyId = 30045;
@@ -270,6 +299,7 @@ internal static partial class UiaNative
     public const int UiaInvoke_InvokedEventId = 20009;
     public const int UiaSelectionItem_ElementSelectedEventId = 20012;
     public const int UiaLiveRegionChangedEventId = 20024;
+    public const int UiaNotificationEventId = 20035;
     public const int UiaText_TextSelectionChangedEventId = 20014;
     public const int UiaText_TextChangedEventId = 20015;
 
@@ -305,6 +335,15 @@ internal static partial class UiaNative
         using var newVariant = AutomationMarshalling.ToVariant(newValue);
         return RaisePropertyChanged(NativeProviderAdapter.For(provider)!, propertyId, AutomationVariant.From(oldVariant), AutomationVariant.From(newVariant));
     }
+
+    [LibraryImport("UIAutomationCore.dll", EntryPoint = "UiaRaiseNotificationEvent")]
+    private static partial int RaiseNotification(INativeSimple provider, NotificationKind kind, NotificationProcessing processing,
+        [MarshalAs(UnmanagedType.BStr)] string displayString, [MarshalAs(UnmanagedType.BStr)] string activityId);
+
+    /// <summary>Asks clients to read <paramref name="displayString"/> (Windows 10 1709 and later).</summary>
+    public static int UiaRaiseNotificationEvent(IRawElementProviderSimple provider, NotificationKind kind, NotificationProcessing processing,
+        string displayString, string activityId) =>
+        RaiseNotification(NativeProviderAdapter.For(provider)!, kind, processing, displayString, activityId);
 
     [LibraryImport("UIAutomationCore.dll", EntryPoint = "UiaRaiseStructureChangedEvent")]
     private static partial int RaiseStructureChanged(INativeSimple provider, StructureChangeType change,
