@@ -29,15 +29,15 @@ public sealed class WindowsClipboard : IUiClipboardHost
     public bool TryGetText(out string text)
     {
         text = string.Empty;
-        if (!IsClipboardFormatAvailable(CfUnicodeText))
-            return false;
-
         IntPtr ownerHandle = _owner();
         if (!OpenClipboard(ownerHandle))
             return false;
 
         try
         {
+            if (!IsClipboardFormatAvailable(CfUnicodeText))
+                return false;
+
             IntPtr handle = GetClipboardData(CfUnicodeText);
             nuint size = handle == IntPtr.Zero ? 0 : GlobalSize(handle);
             if (size < 2 || size > MaximumBytes)
