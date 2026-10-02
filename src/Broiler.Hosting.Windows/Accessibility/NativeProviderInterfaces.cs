@@ -79,3 +79,42 @@ internal partial interface INativeExpandCollapse
 
 [GeneratedComInterface, Guid("2360c714-4bf1-4b26-ba65-9b21316127eb")]
 internal partial interface INativeScrollItem { void ScrollIntoView(); }
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct UiaPoint { public double X; public double Y; }
+
+// Slot order follows ITextProvider in UIAutomationCore.idl.
+[GeneratedComInterface, Guid("3589c92c-63f3-4367-99bb-ada653b77cf2")]
+internal partial interface INativeText
+{
+    nint GetSelection(); // SAFEARRAY(VT_UNKNOWN) of ITextRangeProvider
+    nint GetVisibleRanges(); // SAFEARRAY(VT_UNKNOWN) of ITextRangeProvider
+    INativeTextRange? RangeFromChild(INativeSimple? childElement);
+    INativeTextRange? RangeFromPoint(UiaPoint point);
+    INativeTextRange? GetDocumentRange();
+    SupportedTextSelection GetSupportedTextSelection();
+}
+
+// Slot order follows ITextRangeProvider in UIAutomationCore.idl.
+[GeneratedComInterface(StringMarshalling = StringMarshalling.Utf16), Guid("5347ad7b-c355-46f8-aff5-909033582f63")]
+internal partial interface INativeTextRange
+{
+    INativeTextRange Clone();
+    [return: MarshalAs(UnmanagedType.Bool)] bool Compare(INativeTextRange range);
+    int CompareEndpoints(TextPatternRangeEndpoint endpoint, INativeTextRange targetRange, TextPatternRangeEndpoint targetEndpoint);
+    void ExpandToEnclosingUnit(TextUnit unit);
+    INativeTextRange? FindAttribute(int attributeId, AutomationVariant value, [MarshalAs(UnmanagedType.Bool)] bool backward);
+    INativeTextRange? FindText([MarshalAs(UnmanagedType.BStr)] string text, [MarshalAs(UnmanagedType.Bool)] bool backward, [MarshalAs(UnmanagedType.Bool)] bool ignoreCase);
+    AutomationVariant GetAttributeValue(int attributeId);
+    nint GetBoundingRectangles(); // SAFEARRAY(VT_R8)
+    INativeSimple? GetEnclosingElement();
+    [return: MarshalAs(UnmanagedType.BStr)] string GetText(int maxLength);
+    int Move(TextUnit unit, int count);
+    int MoveEndpointByUnit(TextPatternRangeEndpoint endpoint, TextUnit unit, int count);
+    void MoveEndpointByRange(TextPatternRangeEndpoint endpoint, INativeTextRange targetRange, TextPatternRangeEndpoint targetEndpoint);
+    void Select();
+    void AddToSelection();
+    void RemoveFromSelection();
+    void ScrollIntoView([MarshalAs(UnmanagedType.Bool)] bool alignToTop);
+    nint GetChildren(); // SAFEARRAY(VT_UNKNOWN)
+}

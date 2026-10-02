@@ -5,6 +5,7 @@ using Broiler.UI;
 using Broiler.UI.Button;
 using Broiler.UI.ComboBox;
 using Broiler.UI.Edit;
+using Broiler.UI.Label;
 using Broiler.UI.ListView;
 using Broiler.UI.ListView.Standard;
 using Broiler.UI.RichEdit;
@@ -25,7 +26,8 @@ public sealed class WindowsElementAutomationPeer :
     ISelectionProvider,
     IToggleProvider,
     IExpandCollapseProvider,
-    IScrollItemProvider
+    IScrollItemProvider,
+    ITextProvider
 {
     private readonly WindowsAutomationBridge _bridge;
     internal WindowsAutomationBridge Bridge => _bridge;
@@ -125,6 +127,8 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaTogglePatternId when node.Role is UiSemanticRole.CheckBox => this,
             UiaNative.UiaExpandCollapsePatternId when el is UiComboBox || node.State.HasFlag(UiSemanticState.Expanded) => this,
             UiaNative.UiaScrollItemPatternId when el.Parent is not null => this,
+            // Password fields never expose their text, not even through the Text pattern.
+            UiaNative.UiaTextPatternId when AutomationExposure.IsTextControl(el, node) && el is not UiEdit { IsPassword: true } => this,
             _ => null,
         };
     }
@@ -180,19 +184,27 @@ public sealed class WindowsElementAutomationPeer :
         UiElement? element = Element;
         if (element is null) return null;
         UiSemanticNode semantic = element.GetSemanticNode();
+        bool labelled = propertyId is UiaNative.UiaNamePropertyId or UiaNative.UiaLabeledByPropertyId or UiaNative.UiaHelpTextPropertyId
+            or UiaNative.UiaIsControlElementPropertyId or UiaNative.UiaIsContentElementPropertyId;
+        UiLabel? label = labelled ? AutomationExposure.FindLabel(_bridge.Root, element) : null;
+        string name = labelled ? AutomationExposure.Name(element, semantic, label) : string.Empty;
 
         return propertyId switch
         {
             UiaNative.UiaControlTypePropertyId => MapRoleToControlType(semantic.Role),
             UiaNative.UiaLocalizedControlTypePropertyId => semantic.Role.ToString(),
-            UiaNative.UiaNamePropertyId => !string.IsNullOrEmpty(semantic.Name) ? semantic.Name : element.GetType().Name,
+            // No type-name fallback: an unnamed element has an empty name, not its class name.
+            UiaNative.UiaNamePropertyId => name,
+            UiaNative.UiaLabeledByPropertyId => label is not null && AutomationExposure.IsExposed(label) ? _bridge.GetOrCreatePeer(label) : null,
+            UiaNative.UiaIsControlElementPropertyId => !AutomationExposure.IsLayoutOnly(element, semantic, name),
+            UiaNative.UiaIsContentElementPropertyId => !AutomationExposure.IsLayoutOnly(element, semantic, name),
             UiaNative.UiaAutomationIdPropertyId => element.SemanticId.ToString(),
             UiaNative.UiaClassNamePropertyId => element.GetType().Name,
-            UiaNative.UiaHelpTextPropertyId => semantic.TextInfo?.Value ?? string.Empty,
+            UiaNative.UiaHelpTextPropertyId => AutomationExposure.HelpText(element, name),
             UiaNative.UiaIsEnabledPropertyId => semantic.State.HasFlag(UiSemanticState.Enabled),
             UiaNative.UiaIsKeyboardFocusablePropertyId => element.CanFocus,
             UiaNative.UiaHasKeyboardFocusPropertyId => _bridge.Session.FocusedElement == element,
-            UiaNative.UiaIsOffscreenPropertyId => semantic.State.HasFlag(UiSemanticState.Offscreen) || element.Visibility != UiVisibility.Visible,
+            UiaNative.UiaIsOffscreenPropertyId => semantic.State.HasFlag(UiSemanticState.Offscreen) || !AutomationExposure.IsExposed(element),
             UiaNative.UiaIsPasswordPropertyId => element is UiEdit { IsPassword: true },
             UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
             _ => null,
@@ -314,7 +326,7 @@ public sealed class WindowsElementAutomationPeer :
                 NavigateDirection.Parent => _bridge.GetOrCreatePeer(tv),
                 NavigateDirection.NextSibling => _tabIndex + 1 < tv.Tabs.Count
                     ? _bridge.GetOrCreateTabPeer(tv, _tabIndex + 1)
-                    : (tv.Children.Count > 0 ? _bridge.GetOrCreatePeer(tv.Children[0]) : null),
+                    : (tv.SelectedTab?.Content is { } content && AutomationExposure.IsExposed(content) ? _bridge.GetOrCreatePeer(content) : null),
                 NavigateDirection.PreviousSibling => _tabIndex > 0 ? _bridge.GetOrCreateTabPeer(tv, _tabIndex - 1) : null,
                 _ => null,
             };
@@ -346,7 +358,7 @@ public sealed class WindowsElementAutomationPeer :
 
         foreach (UiElement child in parent.Children)
         {
-            if (child.Visibility == UiVisibility.Visible)
+            if (AutomationExposure.IsExposed(child))
                 return _bridge.GetOrCreatePeer(child);
         }
         return null;
@@ -361,7 +373,7 @@ public sealed class WindowsElementAutomationPeer :
         {
             for (int i = tv.Children.Count - 1; i >= 0; i--)
             {
-                if (tv.Children[i].Visibility == UiVisibility.Visible)
+                if (AutomationExposure.IsExposed(tv.Children[i]))
                     return _bridge.GetOrCreatePeer(tv.Children[i]);
             }
             if (tv.Tabs.Count > 0)
@@ -371,7 +383,7 @@ public sealed class WindowsElementAutomationPeer :
         for (int i = parent.Children.Count - 1; i >= 0; i--)
         {
             UiElement child = parent.Children[i];
-            if (child.Visibility == UiVisibility.Visible)
+            if (AutomationExposure.IsExposed(child))
                 return _bridge.GetOrCreatePeer(child);
         }
         return null;
@@ -382,7 +394,8 @@ public sealed class WindowsElementAutomationPeer :
         UiElement? parent = element.Parent;
         if (parent is null) return null;
 
-        if (parent is UiTabView tv && offset == -1 && tv.Children.Count > 0 && ReferenceEquals(tv.Children[0], element) && tv.Tabs.Count > 0)
+        // The selected tab's content follows the last tab item.
+        if (parent is UiTabView tv && offset == -1 && ReferenceEquals(tv.SelectedTab?.Content, element) && tv.Tabs.Count > 0)
         {
             return _bridge.GetOrCreateTabPeer(tv, tv.Tabs.Count - 1);
         }
@@ -401,13 +414,53 @@ public sealed class WindowsElementAutomationPeer :
         int target = index + offset;
         while (target >= 0 && target < parent.Children.Count)
         {
-            if (parent.Children[target].Visibility == UiVisibility.Visible)
+            if (AutomationExposure.IsExposed(parent.Children[target]))
                 return _bridge.GetOrCreatePeer(parent.Children[target]);
             target += offset;
         }
 
         return null;
     }
+
+    // --- ITextProvider ---
+
+    /// <summary>The plain text of a text control, or null for other elements and password fields.</summary>
+    internal string? TextValue
+    {
+        get
+        {
+            if (Element is not { } el || el is UiEdit { IsPassword: true }) return null;
+            UiSemanticNode node = el.GetSemanticNode();
+            return AutomationExposure.IsTextControl(el, node) ? node.TextInfo?.Value ?? string.Empty : null;
+        }
+    }
+
+    internal void SelectText(int start, int end)
+    {
+        if (Element is IUiTextEditor editor)
+            editor.SetEditorSelection(start, end);
+        else if (Element is UiEdit edit)
+            edit.SetSelection(start, end - start);
+    }
+
+    public WindowsTextRange[] GetTextSelection()
+    {
+        if (Element?.GetSemanticNode().TextInfo is not { } info || TextValue is null) return [];
+        // A collapsed selection is the caret, reported as a degenerate range.
+        return info.SelectionLength > 0
+            ? [new WindowsTextRange(this, info.SelectionStart, info.SelectionStart + info.SelectionLength)]
+            : [new WindowsTextRange(this, info.CaretIndex, info.CaretIndex)];
+    }
+
+    // The semantic model carries no scroll geometry for text, so the whole document is reported.
+    public WindowsTextRange[] GetVisibleRanges() => [DocumentRange];
+
+    public WindowsTextRange DocumentRange => new(this, 0, (TextValue ?? string.Empty).Length);
+
+    public SupportedTextSelection SupportedTextSelection => SupportedTextSelection.Single;
+
+    // Without glyph geometry the nearest position is not known; the start of the text is returned.
+    public WindowsTextRange RangeFromPoint(double x, double y) => new(this, 0, 0);
 
     // --- IInvokeProvider ---
 

@@ -199,6 +199,7 @@ internal static partial class UiaNative
     public const int UiaSelectionItemPatternId = 10010;
     public const int UiaTogglePatternId = 10015;
     public const int UiaScrollItemPatternId = 10017;
+    public const int UiaTextPatternId = 10014;
 
     // Control Type IDs
     public const int UiaButtonControlTypeId = 50000;
@@ -244,6 +245,7 @@ internal static partial class UiaNative
     public const int UiaHelpTextPropertyId = 30013;
     public const int UiaIsControlElementPropertyId = 30016;
     public const int UiaIsContentElementPropertyId = 30017;
+    public const int UiaLabeledByPropertyId = 30018;
     public const int UiaIsPasswordPropertyId = 30019;
     public const int UiaNativeWindowHandlePropertyId = 30020;
     public const int UiaIsOffscreenPropertyId = 30022;
@@ -268,6 +270,8 @@ internal static partial class UiaNative
     public const int UiaInvoke_InvokedEventId = 20009;
     public const int UiaSelectionItem_ElementSelectedEventId = 20012;
     public const int UiaLiveRegionChangedEventId = 20024;
+    public const int UiaText_TextSelectionChangedEventId = 20014;
+    public const int UiaText_TextChangedEventId = 20015;
 
     [LibraryImport("UIAutomationCore.dll", EntryPoint = "UiaReturnRawElementProvider")]
     private static partial nint ReturnRawElementProvider(nint hwnd, nint wParam, nint lParam, INativeSimple provider);
@@ -277,6 +281,10 @@ internal static partial class UiaNative
 
     [LibraryImport("UIAutomationCore.dll")]
     internal static partial int UiaHostProviderFromHwnd(nint hwnd, out INativeSimple? provider);
+
+    /// <summary>The reserved IUnknown a text range returns for attributes it does not support; the caller owns the reference.</summary>
+    [LibraryImport("UIAutomationCore.dll")]
+    internal static partial int UiaGetReservedNotSupportedValue(out nint notSupportedValue);
 
     [LibraryImport("UIAutomationCore.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

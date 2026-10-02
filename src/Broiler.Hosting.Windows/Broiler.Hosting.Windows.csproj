@@ -27,6 +27,7 @@
     <PackageReference Include="Broiler.UI.Button" />
     <PackageReference Include="Broiler.UI.ComboBox" />
     <PackageReference Include="Broiler.UI.Edit" />
+    <PackageReference Include="Broiler.UI.Label" />
     <PackageReference Include="Broiler.UI.ListView" />
     <PackageReference Include="Broiler.UI.ListView.Standard" />
     <PackageReference Include="Broiler.UI.RichEdit" />

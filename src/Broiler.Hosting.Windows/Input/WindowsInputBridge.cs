@@ -56,6 +56,12 @@ public sealed class WindowsInputBridge : IDisposable
     public bool DeadKeyActive => _deadKeyActive;
     public char PendingHighSurrogate => _pendingHighSurrogate;
 
+    /// <summary>Subclasses <paramref name="renderHwnd"/> for IME, surrogate, and precision-wheel input.</summary>
+    /// <remarks>
+    /// Both handles must belong to windows that already exist; with zero handles nothing is attached and
+    /// only the managed text path works. With a Broiler.Graphics <c>Direct2DWindow</c>, construct the
+    /// bridge in <c>OnCreated</c>, not in the window's constructor.
+    /// </remarks>
     public WindowsInputBridge(
         nint topLevelHwnd,
         nint renderHwnd,

@@ -13,6 +13,11 @@ namespace Broiler.Hosting.Windows.Accessibility;
 /// Subclasses the native window to intercept <c>WM_GETOBJECT</c>, exposes the semantic root
 /// via <see cref="IRawElementProviderFragmentRoot"/>, and propagates accessibility events.
 /// </summary>
+/// <remarks>
+/// Pass the handle of a window that already exists. A zero handle attaches nothing, silently, so
+/// clients see an empty pane: with a Broiler.Graphics <c>Direct2DWindow</c>, construct the bridge in
+/// <c>OnCreated</c> (run during <c>WM_CREATE</c>), not in the window's constructor.
+/// </remarks>
 public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, IDisposable
 {
     private static nuint _subclassCounter;
@@ -27,6 +32,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private readonly Dictionary<long, WindowsElementAutomationPeer> _elementPeers = new();
     private readonly Dictionary<(long ListViewId, int Index), WindowsElementAutomationPeer> _itemPeers = new();
     private readonly Dictionary<(long TabViewId, int Index), WindowsElementAutomationPeer> _tabPeers = new();
+    private readonly Dictionary<long, AutomationSnapshot> _snapshots = new();
 
     private bool _isDisposed;
     private readonly int _uiThread = Environment.CurrentManagedThreadId;
@@ -99,6 +105,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         var peer = new WindowsElementAutomationPeer(this, element);
         _elementPeers[element.SemanticId] = peer;
+        // The first snapshot is the baseline that later changes are compared with.
+        _snapshots[element.SemanticId] = Capture(element, peer);
         return peer;
     }
 
@@ -162,10 +170,11 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 UiaNative.UiaRaiseAutomationEvent(target, UiaNative.UiaLiveRegionChangedEventId);
                 break;
 
-            case UiSemanticChangeKind.StateChanged when e.Element is not null:
-                WindowsElementAutomationPeer statePeer = GetOrCreatePeer(e.Element);
-                bool isEnabled = e.Element.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled);
-                UiaNative.UiaRaiseAutomationPropertyChangedEvent(statePeer, UiaNative.UiaIsEnabledPropertyId, !isEnabled, isEnabled);
+            // Every semantic invalidation arrives as StateChanged; only real differences become UIA events,
+            // and only for elements a client has already reached (and therefore has a peer).
+            case UiSemanticChangeKind.StateChanged when e.Element is not null
+                && _elementPeers.TryGetValue(e.Element.SemanticId, out WindowsElementAutomationPeer? statePeer) && statePeer.IsAlive:
+                RaiseChanges(e.Element, statePeer);
                 break;
 
             case UiSemanticChangeKind.StructureChanged or UiSemanticChangeKind.SubtreeChanged:
@@ -175,6 +184,77 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
     }
 
+    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, int SelectedIndex);
+
+    private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
+    {
+        UiSemanticNode node = element.GetSemanticNode();
+        UiSemanticTextInfo? text = node.TextInfo;
+        string? value = peer.TextValue;
+        return new(
+            peer.GetPropertyValue(UiaNative.UiaNamePropertyId) as string ?? string.Empty,
+            node.State.HasFlag(UiSemanticState.Enabled),
+            value,
+            value is null ? 0 : text?.SelectionLength > 0 ? text.SelectionStart : text?.CaretIndex ?? 0,
+            value is null ? 0 : text?.SelectionLength ?? 0,
+            element switch { UiListView list => list.SelectedIndex, UiTabView tabs => tabs.SelectedIndex, _ => -1 });
+    }
+
+    /// <summary>A UIA event or property change detected for an element, raised only while clients listen.</summary>
+    internal readonly record struct AutomationChange(IRawElementProviderSimple Target, int Id, bool IsProperty, object? OldValue = null, object? NewValue = null);
+
+    /// <summary>Changes raised to UIA clients, for diagnostics and tests.</summary>
+    internal event Action<IReadOnlyList<AutomationChange>>? ChangesRaised;
+
+    private void RaiseChanges(UiElement element, WindowsElementAutomationPeer peer)
+    {
+        List<AutomationChange> changes = DetectChanges(element, peer);
+        if (changes.Count > 0) ChangesRaised?.Invoke(changes);
+        foreach (AutomationChange change in changes)
+        {
+            if (change.IsProperty)
+                UiaNative.UiaRaiseAutomationPropertyChangedEvent(change.Target, change.Id, change.OldValue!, change.NewValue!);
+            else
+                UiaNative.UiaRaiseAutomationEvent(change.Target, change.Id);
+        }
+    }
+
+    /// <summary>Compares the element with its last snapshot and returns only what actually changed.</summary>
+    internal List<AutomationChange> DetectChanges(UiElement element, WindowsElementAutomationPeer peer)
+    {
+        var changes = new List<AutomationChange>();
+        AutomationSnapshot now = Capture(element, peer);
+        bool known = _snapshots.TryGetValue(element.SemanticId, out AutomationSnapshot before);
+        _snapshots[element.SemanticId] = now;
+        if (!known) return changes;
+
+        if (before.Name != now.Name)
+            changes.Add(new(peer, UiaNative.UiaNamePropertyId, true, before.Name, now.Name));
+        if (before.IsEnabled != now.IsEnabled)
+            changes.Add(new(peer, UiaNative.UiaIsEnabledPropertyId, true, before.IsEnabled, now.IsEnabled));
+        // Password fields have no text here, so typing in them raises no value or text events.
+        if (now.Text is not null && before.Text != now.Text)
+        {
+            changes.Add(new(peer, UiaNative.UiaValueValuePropertyId, true, before.Text ?? string.Empty, now.Text));
+            changes.Add(new(peer, UiaNative.UiaText_TextChangedEventId, false));
+        }
+        if (now.Text is not null && (before.SelectionStart, before.SelectionLength) != (now.SelectionStart, now.SelectionLength))
+            changes.Add(new(peer, UiaNative.UiaText_TextSelectionChangedEventId, false));
+        if (before.SelectedIndex != now.SelectedIndex && now.SelectedIndex >= 0)
+        {
+            IRawElementProviderSimple? selected = element switch
+            {
+                UiListView list when now.SelectedIndex < list.Items.Count => GetOrCreateItemPeer(list, now.SelectedIndex),
+                UiTabView tabs when now.SelectedIndex < tabs.Tabs.Count => GetOrCreateTabPeer(tabs, now.SelectedIndex),
+                _ => null,
+            };
+            if (selected is not null)
+                changes.Add(new(selected, UiaNative.UiaSelectionItem_ElementSelectedEventId, false));
+        }
+
+        return changes;
+    }
+
     private void CleanDeadPeers()
     {
         var deadElementKeys = new List<long>();
@@ -182,7 +262,11 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             if (!peer.IsAlive) deadElementKeys.Add(key);
         }
-        foreach (long key in deadElementKeys) _elementPeers.Remove(key);
+        foreach (long key in deadElementKeys)
+        {
+            _elementPeers.Remove(key);
+            _snapshots.Remove(key);
+        }
 
         var deadItemKeys = new List<(long, int)>();
         foreach (((long, int) key, WindowsElementAutomationPeer peer) in _itemPeers)
@@ -212,7 +296,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     public object? GetPropertyValue(int propertyId) => propertyId switch
     {
         UiaNative.UiaControlTypePropertyId => UiaNative.UiaPaneControlTypeId,
-        UiaNative.UiaNamePropertyId => "Broiler.Mail Window",
+        // The host application's root element names itself (for example by its window title).
+        UiaNative.UiaNamePropertyId => _root.GetSemanticNode().Name ?? string.Empty,
         UiaNative.UiaAutomationIdPropertyId => _root.SemanticId.ToString(),
         UiaNative.UiaNativeWindowHandlePropertyId => _hwnd,
         UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
@@ -250,7 +335,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         foreach (UiElement child in parent.Children)
         {
-            if (child.Visibility == UiVisibility.Visible)
+            if (AutomationExposure.IsExposed(child))
                 return GetOrCreatePeer(child);
         }
         return null;
@@ -265,7 +350,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             for (int i = tv.Children.Count - 1; i >= 0; i--)
             {
-                if (tv.Children[i].Visibility == UiVisibility.Visible)
+                if (AutomationExposure.IsExposed(tv.Children[i]))
                     return GetOrCreatePeer(tv.Children[i]);
             }
             if (tv.Tabs.Count > 0)
@@ -275,7 +360,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         for (int i = parent.Children.Count - 1; i >= 0; i--)
         {
             UiElement child = parent.Children[i];
-            if (child.Visibility == UiVisibility.Visible)
+            if (AutomationExposure.IsExposed(child))
                 return GetOrCreatePeer(child);
         }
         return null;
@@ -349,7 +434,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private static UiElement? HitTestElement(UiElement root, BPoint point)
     {
-        if (root.Visibility != UiVisibility.Visible || !root.Bounds.Contains(point))
+        if (!AutomationExposure.IsExposed(root) || !root.Bounds.Contains(point))
             return null;
 
         for (int i = root.Children.Count - 1; i >= 0; i--)
@@ -377,5 +462,6 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _elementPeers.Clear();
         _itemPeers.Clear();
         _tabPeers.Clear();
+        _snapshots.Clear();
     }
 }
