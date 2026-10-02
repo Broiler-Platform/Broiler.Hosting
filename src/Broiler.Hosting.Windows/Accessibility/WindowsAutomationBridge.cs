@@ -167,6 +167,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
             case UiSemanticChangeKind.StatusAnnounced:
                 IRawElementProviderSimple target = e.Element is not null ? GetOrCreatePeer(e.Element) : this;
+                if (StatusAnnouncements.Plan(e.Element!, e.Message) is { } notification && RaiseNotification(target, notification))
+                    break;
                 UiaNative.UiaRaiseAutomationEvent(target, UiaNative.UiaLiveRegionChangedEventId);
                 break;
 
@@ -253,6 +255,24 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
 
         return changes;
+    }
+
+    private static bool _notificationsUnavailable;
+
+    /// <summary>Raises a notification event; false where UIA predates them (before Windows 10 1709).</summary>
+    private static bool RaiseNotification(IRawElementProviderSimple target, StatusNotification notification)
+    {
+        if (_notificationsUnavailable) return false;
+        try
+        {
+            UiaNative.UiaRaiseNotificationEvent(target, NotificationKind.Other, notification.Processing, notification.Text, notification.ActivityId);
+            return true;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            _notificationsUnavailable = true;
+            return false;
+        }
     }
 
     private void CleanDeadPeers()

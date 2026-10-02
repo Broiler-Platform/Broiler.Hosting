@@ -27,7 +27,8 @@ Provides Windows desktop hosting facilities:
   - Coordinate-free control and item tree navigation.
   - Password protection ensuring sensitive fields never expose plain text through UIA.
   - Point hit-testing down to child elements and virtualized list items.
-  - Dynamic peer lifecycle management and live region status announcements.
+  - Dynamic peer lifecycle management.
+  - `UiSession.AnnounceStatus` raises a UIA notification carrying the announced text, so clients read the status rather than the source element's name. Each source element is one activity: a newer status replaces one still queued, and an error (`Invalid` state) is read before other speech. Status elements report `LiveSetting` Polite, or Assertive while reporting an error. Without text, or on Windows before 10 1709, a live-region change is raised instead.
 
 ### `Broiler.Hosting.Linux`
 Provides Linux desktop hosting facilities:

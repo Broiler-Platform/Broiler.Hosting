@@ -229,6 +229,42 @@ public sealed class AutomationProviderMappingTests
         Assert.Same(bridge.GetOrCreateItemPeer(list, 2), change.Target);
     }
 
+    [Fact]
+    public void StatusElementsArePoliteLiveRegionsAndAssertiveWhenReportingAnError()
+    {
+        var (_, bridge, root) = Create();
+        var status = new StatusElement();
+        var button = new StandardButton { Text = "Send" };
+        root.AddChild(status);
+        root.AddChild(button);
+
+        Assert.Equal((int)LiveSetting.Polite, bridge.GetOrCreatePeer(status).GetPropertyValue(UiaNative.UiaLiveSettingPropertyId));
+        status.IsError = true;
+        Assert.Equal((int)LiveSetting.Assertive, bridge.GetOrCreatePeer(status).GetPropertyValue(UiaNative.UiaLiveSettingPropertyId));
+        // Other elements leave the property unsupported, which UIA reads as Off.
+        Assert.Null(bridge.GetOrCreatePeer(button).GetPropertyValue(UiaNative.UiaLiveSettingPropertyId));
+    }
+
+    [Fact]
+    public void AnnouncementsCarryTheirTextAndReplaceEarlierOnesFromTheSameElement()
+    {
+        var status = new StatusElement();
+        var other = new StatusElement();
+
+        var first = Assert.NotNull(StatusAnnouncements.Plan(status, "Receiving newest messages…"));
+        var second = Assert.NotNull(StatusAnnouncements.Plan(status, "12 messages loaded."));
+        Assert.Equal("12 messages loaded.", second.Text);
+        Assert.Equal(NotificationProcessing.MostRecent, second.Processing);
+        Assert.Equal(first.ActivityId, second.ActivityId);
+        Assert.NotEqual(first.ActivityId, StatusAnnouncements.Plan(other, "Saved.")!.Value.ActivityId);
+
+        status.IsError = true;
+        Assert.Equal(NotificationProcessing.ImportantMostRecent, StatusAnnouncements.Plan(status, "Sending failed.")!.Value.Processing);
+        // Nothing to read: the bridge falls back to a live-region change, read from the element's name.
+        Assert.Null(StatusAnnouncements.Plan(status, ""));
+        Assert.Null(StatusAnnouncements.Plan(status, null));
+    }
+
     // Whether a UIA client is listening is machine-wide. When one is, the bridge raises (and consumes)
     // the changes itself; otherwise they are still pending. Collect them from both paths.
     private static System.Collections.Generic.List<WindowsAutomationBridge.AutomationChange> Observe(
@@ -258,6 +294,13 @@ public sealed class AutomationProviderMappingTests
         root.Arrange(new BRect(0, 0, 800, 600));
         session.AddRoot(root);
         return (session, new WindowsAutomationBridge(nint.Zero, session, root), root);
+    }
+
+    private sealed class StatusElement : UiElement
+    {
+        public bool IsError { get; set; }
+        protected override UiSemanticNode GetSemanticNodeCore() => new(UiSemanticRole.StatusAnnouncement, "Status", Bounds,
+            UiSemanticState.Visible | (IsError ? UiSemanticState.Invalid : UiSemanticState.None), [], Id: SemanticId);
     }
 
     private sealed class Host : IUiHost
