@@ -38,6 +38,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install Android workload
+        run: dotnet workload install android
+
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
