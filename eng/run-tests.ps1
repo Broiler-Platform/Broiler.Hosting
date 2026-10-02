@@ -6,9 +6,9 @@ Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
     # Each suite gets a fresh report, so one runner cannot hide another.
     [xml] $solution = Get-Content Broiler.Hosting.slnx -Raw
-    $isWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
-    $includeWindows = $isWindows -and ($Configuration -notlike '*-Linux')
-    if (!$isWindows) {
+    $runningOnWindows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+    $includeWindows = $runningOnWindows -and ($Configuration -notlike '*-Linux')
+    if (!$runningOnWindows) {
         Write-Host "Skipping Windows test suites on non-Windows host ($([System.Runtime.InteropServices.RuntimeInformation]::OSDescription.Trim()))."
     }
     $projects = @(
