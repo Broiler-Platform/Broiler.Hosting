@@ -5,7 +5,6 @@ using Broiler.UI;
 using Broiler.UI.Button;
 using Broiler.UI.ComboBox;
 using Broiler.UI.Edit;
-using Broiler.UI.Label;
 using Broiler.UI.ListView;
 using Broiler.UI.ListView.Standard;
 using Broiler.UI.RichEdit;
@@ -184,10 +183,7 @@ public sealed class WindowsElementAutomationPeer :
         UiElement? element = Element;
         if (element is null) return null;
         UiSemanticNode semantic = element.GetSemanticNode();
-        bool labelled = propertyId is UiaNative.UiaNamePropertyId or UiaNative.UiaLabeledByPropertyId or UiaNative.UiaHelpTextPropertyId
-            or UiaNative.UiaIsControlElementPropertyId or UiaNative.UiaIsContentElementPropertyId;
-        UiLabel? label = labelled ? AutomationExposure.FindLabel(_bridge.Root, element) : null;
-        string name = labelled ? AutomationExposure.Name(element, semantic, label) : string.Empty;
+        string name = AutomationExposure.Name(semantic);
 
         return propertyId switch
         {
@@ -195,7 +191,7 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaLocalizedControlTypePropertyId => semantic.Role.ToString(),
             // No type-name fallback: an unnamed element has an empty name, not its class name.
             UiaNative.UiaNamePropertyId => name,
-            UiaNative.UiaLabeledByPropertyId => label is not null && AutomationExposure.IsExposed(label) ? _bridge.GetOrCreatePeer(label) : null,
+            UiaNative.UiaLabeledByPropertyId => element.LabeledBy is { IsDisposed: false } label && AutomationExposure.IsExposed(label) ? _bridge.GetOrCreatePeer(label) : null,
             UiaNative.UiaIsControlElementPropertyId => !AutomationExposure.IsLayoutOnly(element, semantic, name),
             UiaNative.UiaIsContentElementPropertyId => !AutomationExposure.IsLayoutOnly(element, semantic, name),
             UiaNative.UiaAutomationIdPropertyId => element.SemanticId.ToString(),

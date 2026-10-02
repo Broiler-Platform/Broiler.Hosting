@@ -68,6 +68,22 @@ public sealed class AutomationProviderMappingTests
     }
 
     [Fact]
+    public void ExplicitAccessibleNameWinsOverLabelAndPlaceholder()
+    {
+        var (_, bridge, root) = Create();
+        var reader = new StandardRichEdit { PlaceholderText = "No message selected", AccessibleName = "Message body" };
+        var edit = new StandardEdit { PlaceholderText = "hint", AccessibleName = "Search mail" };
+        root.AddChild(new StandardLabel { Text = "Search", Target = edit });
+        root.AddChild(reader);
+        root.AddChild(edit);
+
+        var readerPeer = bridge.GetOrCreatePeer(reader);
+        Assert.Equal("Message body", readerPeer.GetPropertyValue(UiaNative.UiaNamePropertyId));
+        Assert.Equal("No message selected", readerPeer.GetPropertyValue(UiaNative.UiaHelpTextPropertyId));
+        Assert.Equal("Search mail", bridge.GetOrCreatePeer(edit).GetPropertyValue(UiaNative.UiaNamePropertyId));
+    }
+
+    [Fact]
     public void PasswordFieldIsLabelledButExposesNoTextPatternOrValue()
     {
         var (_, bridge, root) = Create();
