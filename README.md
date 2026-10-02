@@ -8,7 +8,8 @@ Shared desktop and mobile hosting runtime, windowing services, input fidelity, a
 Provides Windows desktop hosting facilities:
 - **`WindowsClipboard`**: Hardened Win32 clipboard integration with 1 MB UTF-16 bounds protection, strict `GlobalSize` validation, direct or lazy HWND owner resolution, and safe OS memory handoff.
 - **`WindowsWindowSizing`**: Window sizing, minimum dimension enforcement (DPI-scaled client minimum 640x480) via `WM_GETMINMAXINFO`, and dynamic multi-monitor DPI transition handling via `WM_DPICHANGED`.
-- **`WindowsTheme`**: System appearance inspection querying dark/light preference, Windows high contrast mode (`SPI_GETHIGHCONTRAST`), and reduced motion preferences (`SPI_GETCLIENTAREAANIMATION`), exposing `UiSystemSettings`.
+- **`WindowsTheme`**: System appearance inspection querying dark/light preference, Windows high contrast mode (`SPI_GETHIGHCONTRAST`), reduced motion preferences (`SPI_GETCLIENTAREAANIMATION`), and the "Make text bigger" text scale (`TextScaleFactor`, 1.0 to 2.25), exposing `UiSystemSettings`. `ResolveTheme(UiSystemSettings)` returns the standard preset, or in high contrast a palette built from the user's actual system colors (`WindowsSystemColors`, `CreateHighContrastTheme`), with readable fallbacks for a focus ring or link color that blends into the window background.
+- **`WindowsTitleBar`**: Matches the native caption to a dark or light palette (`DWMWA_USE_IMMERSIVE_DARK_MODE`, Windows 10 build 19041 or later). Call it after the native window exists and whenever the palette changes.
 - **`WindowsInputBridge`**: High-fidelity native input and scroll integration:
   - Top-level window activation focus handoff (`WM_SETFOCUS` and `WM_ACTIVATE` transferring Win32 focus to the render child HWND).
   - Exactly-once text delivery across `WM_CHAR` and IMM32 IME compositions (`WM_IME_STARTCOMPOSITION`, `WM_IME_COMPOSITION`, synthetic `WM_CHAR` suppression after commit).
