@@ -24,11 +24,15 @@ concurrency:
 
 jobs:
   build:
-    name: Release (Linux)
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Release
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -50,6 +54,7 @@ jobs:
         run: node --test eng/resolve-preview-version.test.mjs
 
       - name: Verify one assembly per name
+        if: matrix.os == 'ubuntu-latest'
         run: bash ./scripts/check-component-graph.sh
         env:
           CONFIGURATION: Release
@@ -72,15 +77,17 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports
+          name: test-reports-${{ matrix.os }}
           path: test-results/
           if-no-files-found: warn
 
       - name: Pack and verify every package
+        if: matrix.os == 'windows-latest'
         shell: pwsh
         run: ./eng/pack.ps1 -Version $env:PACKAGE_VERSION
 
       - name: Upload packages
+        if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
