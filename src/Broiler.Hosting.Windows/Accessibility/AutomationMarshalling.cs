@@ -15,6 +15,9 @@ internal static unsafe partial class AutomationMarshalling
         nint handle => ComVariant.Create(unchecked((int)handle)), // UIA native-window-handle property is VT_I4.
         UiaRect rect => ComVariant.CreateRaw(VarEnum.VT_ARRAY | VarEnum.VT_R8,
             Doubles([rect.Left, rect.Top, rect.Width, rect.Height])),
+        // Element-valued properties such as LabeledBy: the VARIANT owns one provider reference.
+        IRawElementProviderSimple provider => ComVariant.CreateRaw(VarEnum.VT_UNKNOWN,
+            (nint)ComInterfaceMarshaller<INativeSimple>.ConvertToUnmanaged(NativeProviderAdapter.For(provider))),
         _ => throw new NotSupportedException($"Unsupported UIA property type: {value.GetType().Name}"),
     };
 
@@ -48,6 +51,23 @@ internal static unsafe partial class AutomationMarshalling
                 // PutElement takes an IUnknown* directly and adds its own reference.
                 try { Marshal.ThrowExceptionForHR(SafeArrayPutElement(array, in i, (nint)pointer)); }
                 finally { ComInterfaceMarshaller<INativeSimple>.Free(pointer); }
+            }
+            return array;
+        }
+        catch { SafeArrayDestroy(array); throw; }
+    }
+
+    internal static nint TextRanges(WindowsTextRange[] values)
+    {
+        nint array = SafeArrayCreateVector((ushort)VarEnum.VT_UNKNOWN, 0, (uint)values.Length);
+        if (array == 0) throw new OutOfMemoryException();
+        try
+        {
+            for (int i = 0; i < values.Length; i++)
+            {
+                void* pointer = ComInterfaceMarshaller<INativeTextRange>.ConvertToUnmanaged(new NativeTextRange(values[i]));
+                try { Marshal.ThrowExceptionForHR(SafeArrayPutElement(array, in i, (nint)pointer)); }
+                finally { ComInterfaceMarshaller<INativeTextRange>.Free(pointer); }
             }
             return array;
         }

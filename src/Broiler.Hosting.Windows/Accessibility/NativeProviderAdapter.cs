@@ -8,7 +8,7 @@ namespace Broiler.Hosting.Windows.Accessibility;
 [GeneratedComClass]
 internal sealed partial class NativeProviderAdapter(IRawElementProviderSimple target) :
     INativeSimple, INativeFragment, INativeFragmentRoot, INativeInvoke, INativeValue,
-    INativeSelectionItem, INativeSelection, INativeToggle, INativeExpandCollapse, INativeScrollItem
+    INativeSelectionItem, INativeSelection, INativeToggle, INativeExpandCollapse, INativeScrollItem, INativeText
 {
     private static readonly ConditionalWeakTable<IRawElementProviderSimple, NativeProviderAdapter> Adapters = new();
     internal static NativeProviderAdapter? For(IRawElementProviderSimple? target) =>
@@ -58,4 +58,13 @@ internal sealed partial class NativeProviderAdapter(IRawElementProviderSimple ta
     void INativeExpandCollapse.Collapse() => Change(((IExpandCollapseProvider)target).Collapse);
     ExpandCollapseState INativeExpandCollapse.GetExpandCollapseState() => Read(() => ((IExpandCollapseProvider)target).ExpandCollapseState);
     void INativeScrollItem.ScrollIntoView() => Change(((IScrollItemProvider)target).ScrollIntoView);
+
+    private ITextProvider Text => (ITextProvider)target;
+    nint INativeText.GetSelection() => Read(() => AutomationMarshalling.TextRanges(Text.GetTextSelection()));
+    nint INativeText.GetVisibleRanges() => Read(() => AutomationMarshalling.TextRanges(Text.GetVisibleRanges()));
+    // The text has no embedded child elements.
+    INativeTextRange? INativeText.RangeFromChild(INativeSimple? childElement) => null;
+    INativeTextRange? INativeText.RangeFromPoint(UiaPoint point) => Read(() => new NativeTextRange(Text.RangeFromPoint(point.X, point.Y)));
+    INativeTextRange? INativeText.GetDocumentRange() => Read(() => new NativeTextRange(Text.DocumentRange));
+    SupportedTextSelection INativeText.GetSupportedTextSelection() => Read(() => Text.SupportedTextSelection);
 }

@@ -149,6 +149,12 @@ public sealed class WindowsAutomationBridgeTests
             (string?)n.GetPropertyValue(UiaNative.UiaNamePropertyId) == "Inbox");
         Assert.NotNull(inboxTab);
 
+        // The unselected Compose tab's content is not exposed; selecting the tab exposes it.
+        Assert.DoesNotContain(allNodes, n => (string?)n.GetPropertyValue(UiaNative.UiaNamePropertyId) == "Send");
+        tabView.SelectTab("compose");
+        allNodes = FlattenTree(bridge);
+        Assert.DoesNotContain(allNodes, n => (string?)n.GetPropertyValue(UiaNative.UiaNamePropertyId) == "Older");
+
         // Locate "To" field
         var toNode = allNodes.FirstOrDefault(n =>
             (int?)n.GetPropertyValue(UiaNative.UiaControlTypePropertyId) == UiaNative.UiaEditControlTypeId &&

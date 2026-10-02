@@ -19,7 +19,11 @@ Provides Windows desktop hosting facilities:
   - Decoupled application-level input filtering hook (`Func<UiInputEvent, bool>?`).
 - **`WindowsAutomationBridge` & `WindowsElementAutomationPeer`**: Native Windows UI Automation (UIA) bridge:
   - Implements `IRawElementProviderFragmentRoot`, `IRawElementProviderFragment`, `IRawElementProviderSimple`.
-  - Maps Broiler UI controls to standard UIA patterns (`IInvokeProvider`, `IValueProvider`, `ISelectionProvider`, `ISelectionItemProvider`, `IToggleProvider`, `IExpandCollapseProvider`, `IScrollItemProvider`).
+  - Maps Broiler UI controls to standard UIA patterns (`IInvokeProvider`, `IValueProvider`, `ISelectionProvider`, `ISelectionItemProvider`, `IToggleProvider`, `IExpandCollapseProvider`, `IScrollItemProvider`, and `ITextProvider`/`ITextRangeProvider` for Edit and RichEdit text, by character, word, paragraph, and document, with search and selection; never for password fields).
+  - Names come from the semantic name, never a type name; a field targeted by a label is named by that label and reports it as `LabeledBy`, with its text as Value and its placeholder as HelpText. Unnamed layout containers are non-control elements, so the Control view shows their children directly.
+  - Only the selected tab's content is exposed: inactive tab content is skipped in navigation and hit-testing and reported offscreen.
+  - Change events are raised only for real differences (name, enabled state, value and text, text selection, list or tab selection).
+  - Create the bridge with the handle of an existing window: with a `Direct2DWindow`, in `OnCreated`. A zero handle attaches nothing and clients see an empty pane. The same applies to `WindowsInputBridge`.
   - Coordinate-free control and item tree navigation.
   - Password protection ensuring sensitive fields never expose plain text through UIA.
   - Point hit-testing down to child elements and virtualized list items.

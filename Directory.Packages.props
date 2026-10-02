@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <BroilerUiVersion>0.1.0-preview.11</BroilerUiVersion>
+    <BroilerUiVersion>0.1.0-preview.12</BroilerUiVersion>
     <BroilerGraphicsVersion>0.1.0-preview.7</BroilerGraphicsVersion>
     <BroilerNativeVersion>0.1.0-preview.6</BroilerNativeVersion>
     <BroilerInputVersion>0.1.0-preview.5</BroilerInputVersion>
@@ -14,6 +14,7 @@
     <PackageVersion Include="Broiler.UI.ComboBox" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ComboBox.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Edit" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.Label.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Edit.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ListView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ListView.Standard" Version="$(BroilerUiVersion)" />
