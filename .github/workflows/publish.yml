@@ -89,12 +89,21 @@ jobs:
 
       - name: Push to NuGet.org
         if: env.DRY_RUN != 'true'
+        shell: pwsh
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_TOKEN || secrets.NUGET_API_KEY }}
-        run: >
-          dotnet nuget push 'artifacts/*.nupkg'
-          --source https://api.nuget.org/v3/index.json
-          --api-key "$NUGET_API_KEY"
+        run: |
+          $packages = @(Get-ChildItem -Path artifacts -Filter *.nupkg)
+          if ($packages.Count -eq 0) {
+            throw "No .nupkg packages found in artifacts directory."
+          }
+          foreach ($pkg in $packages) {
+            Write-Host "Pushing $($pkg.Name)..."
+            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
 
       - name: Summary
         run: |
