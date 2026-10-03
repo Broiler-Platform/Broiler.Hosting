@@ -34,12 +34,18 @@ public sealed class WindowsInputBridge : IDisposable
     private char _pendingHighSurrogate;
     private bool _deadKeyActive;
     private bool _isComposing;
+    // The WM_CHAR copies Windows sends after an IME commit, still expected, and when the commit's
+    // dispatch finished. The copies follow the commit at once and in order, so the first other
+    // character, a new composition, or a focus change ends the suppression; the time limit is a backstop.
     private string _lastCommittedImeString = string.Empty;
-    private long _lastCommittedImeTime;
+    private long _lastCommittedImeTimestamp;
+    private static readonly TimeSpan CommittedCopyWindow = TimeSpan.FromMilliseconds(500);
 
     // Testability hooks
     public Func<int, short> KeyStateProvider { get; set; } = InputNative.GetKeyState;
     public Func<nint, uint, string> CompositionStringProvider { get; set; } = ReadCompositionStringFromImm;
+    /// <summary>The clock for the backstop that ends suppression of an IME commit's WM_CHAR copies.</summary>
+    public TimeProvider Clock { get; set; } = TimeProvider.System;
     public Action<nint>? SetFocusAction { get; set; } = hwnd => { if (hwnd != nint.Zero) InputNative.SetFocus(hwnd); };
     public Func<nint, InputNative.POINT, InputNative.POINT> ScreenToClientAction { get; set; } = (hwnd, pt) =>
     {
@@ -128,10 +134,12 @@ public sealed class WindowsInputBridge : IDisposable
                 }
                 _pendingHighSurrogate = '\0';
                 _deadKeyActive = false;
+                _lastCommittedImeString = string.Empty;
                 break;
 
             case InputNative.WM_IME_STARTCOMPOSITION:
                 _isComposing = true;
+                _lastCommittedImeString = string.Empty;
                 Dispatch(UiInputEvent.FromTextComposition(new TextCompositionEvent(
                     NextHeader("text"),
                     string.Empty,
@@ -146,14 +154,16 @@ public sealed class WindowsInputBridge : IDisposable
                     string resultText = CompositionStringProvider(hWnd, InputNative.GCS_RESULTSTR);
                     if (!string.IsNullOrEmpty(resultText))
                     {
-                        _lastCommittedImeString = resultText;
-                        _lastCommittedImeTime = Environment.TickCount64;
                         _isComposing = false;
                         Dispatch(UiInputEvent.FromTextComposition(new TextCompositionEvent(
                             NextHeader("text"),
                             resultText,
                             TextCompositionState.Committed,
                             Source: InputEventSource.Synthetic)));
+                        // Measured from the end of the dispatch: a slow first insertion (JIT, first
+                        // layout) must not use up the window before the copies arrive.
+                        _lastCommittedImeString = resultText;
+                        _lastCommittedImeTimestamp = Clock.GetTimestamp();
                     }
                 }
                 if ((compFlags & InputNative.GCS_COMPSTR) != 0)
@@ -218,17 +228,16 @@ public sealed class WindowsInputBridge : IDisposable
 
     internal bool ProcessChar(char c)
     {
-        // 1. Suppress duplicate WM_CHAR synthesized after an IME commit
-        if (!string.IsNullOrEmpty(_lastCommittedImeString) &&
-            (Environment.TickCount64 - _lastCommittedImeTime) < 500)
+        // 1. Suppress the WM_CHAR copies Windows synthesizes after an IME commit
+        if (!string.IsNullOrEmpty(_lastCommittedImeString))
         {
-            if (_lastCommittedImeString[0] == c)
+            if (_lastCommittedImeString[0] == c && Clock.GetElapsedTime(_lastCommittedImeTimestamp) < CommittedCopyWindow)
             {
-                _lastCommittedImeString = _lastCommittedImeString.Length > 1
-                    ? _lastCommittedImeString[1..]
-                    : string.Empty;
+                _lastCommittedImeString = _lastCommittedImeString[1..];
                 return true;
             }
+            // Anything else means the copies are not coming, or are over: it is typed normally.
+            _lastCommittedImeString = string.Empty;
         }
 
         // 2. Control chord suppression: Ctrl+Key without Alt produces ASCII control codes
