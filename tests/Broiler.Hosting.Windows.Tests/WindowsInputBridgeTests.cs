@@ -252,6 +252,77 @@ public sealed class WindowsInputBridgeTests
     }
 
     [Fact]
+    public void ImeCommit_CopiesAreSuppressed_EvenWhenTheCommitDispatchIsSlow()
+    {
+        var (_, bridge, events) = CreateTestHarness();
+        var clock = new ManualClock();
+        bridge.Clock = clock;
+        // The first insertion into a cold editor (JIT, first layout) can take longer than the window.
+        bridge.EventDispatched += ev =>
+        {
+            if (ev.CompositionState == TextCompositionState.Committed)
+                clock.Advance(TimeSpan.FromSeconds(2));
+        };
+
+        Commit(bridge, "日本");
+        events.Clear();
+        bridge.ProcessChar('日');
+        bridge.ProcessChar('本');
+
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void ImeCommit_AnotherCharacterEndsTheSuppression()
+    {
+        var (_, bridge, events) = CreateTestHarness();
+        bridge.Clock = new ManualClock();
+
+        Commit(bridge, "日本");
+        events.Clear();
+        bridge.ProcessChar('日');   // the first copy
+        bridge.ProcessChar('x');    // typed: the second copy is not coming
+        bridge.ProcessChar('本');   // typed by the user, not a late copy
+
+        Assert.Equal(new[] { "x", "本" }, events.ConvertAll(ev => ev.Text));
+    }
+
+    [Fact]
+    public void ImeCommit_CopiesAfterTheBackstopOrANewCompositionAreTyped()
+    {
+        var (_, bridge, events) = CreateTestHarness();
+        var clock = new ManualClock();
+        bridge.Clock = clock;
+
+        Commit(bridge, "日");
+        clock.Advance(TimeSpan.FromMilliseconds(600));
+        events.Clear();
+        bridge.ProcessChar('日');
+        Assert.Equal("日", Assert.Single(events).Text);
+
+        Commit(bridge, "本");
+        bridge.ProcessNativeMessage(0, InputNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        events.Clear();
+        bridge.ProcessChar('本');
+        Assert.Equal("本", Assert.Single(events).Text);
+    }
+
+    private static void Commit(WindowsInputBridge bridge, string text)
+    {
+        bridge.ProcessNativeMessage(0, InputNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        bridge.CompositionStringProvider = (_, idx) => idx == InputNative.GCS_RESULTSTR ? text : "";
+        bridge.ProcessNativeMessage(0, InputNative.WM_IME_COMPOSITION, 0, (nint)InputNative.GCS_RESULTSTR);
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private long _ticks;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _ticks;
+        public void Advance(TimeSpan by) => _ticks += by.Ticks;
+    }
+
+    [Fact]
     public void ImeComposition_CancelledOnKillFocus()
     {
         var (_, bridge, events) = CreateTestHarness();
