@@ -26,5 +26,6 @@
     <PackageReference Include="Broiler.UI.Panel.Standard" />
     <PackageReference Include="Broiler.UI.RichEdit.Standard" />
     <PackageReference Include="Broiler.UI.ScrollView.Standard" />
+    <PackageReference Include="Broiler.UI.ToggleButton.Standard" />
   </ItemGroup>
 </Project>

@@ -184,11 +184,12 @@ public sealed partial class WindowsElementAutomationPeer :
 
         return patternId switch
         {
-            UiaNative.UiaInvokePatternId when node.Role == UiSemanticRole.Button || el is UiButton => this,
+            // A toggle button's click is its Toggle, which UIA offers instead of Invoke, as for WPF and WinUI.
+            UiaNative.UiaInvokePatternId when (node.Role == UiSemanticRole.Button || el is UiButton) && node.Role != UiSemanticRole.ToggleButton => this,
             UiaNative.UiaValuePatternId when node.Role is UiSemanticRole.Edit or UiSemanticRole.RichEdit || el is UiEdit or UiRichEdit => this,
             UiaNative.UiaSelectionItemPatternId when node.Role is UiSemanticRole.RadioButton => this,
             UiaNative.UiaSelectionPatternId when node.Role is UiSemanticRole.ListView or UiSemanticRole.TabView || el is UiListView or UiTabView => this,
-            UiaNative.UiaTogglePatternId when node.Role is UiSemanticRole.CheckBox => this,
+            UiaNative.UiaTogglePatternId when IsToggle(node.Role) => this,
             // Whatever reports Expanded or Collapsed expands: a combo box, a menu, a disclosure button.
             UiaNative.UiaExpandCollapsePatternId when HasExpandState(node.State) => this,
             UiaNative.UiaScrollItemPatternId when el.Parent is not null => this,
@@ -312,6 +313,13 @@ public sealed partial class WindowsElementAutomationPeer :
     // An error message counts while it says something, as it does for the element's Invalid state.
     private static UiElement? ShownErrorMessage(UiElement element) =>
         element.ErrorMessage is { } message && !string.IsNullOrWhiteSpace(message.GetSemanticNode().Name) ? message : null;
+
+    internal static bool IsToggle(UiSemanticRole role) => role is UiSemanticRole.CheckBox or UiSemanticRole.ToggleButton;
+
+    internal static ToggleState ToggleStateOf(UiSemanticState state) =>
+        state.HasFlag(UiSemanticState.Indeterminate) ? ToggleState.Indeterminate
+        : state.HasFlag(UiSemanticState.Checked) ? ToggleState.On
+        : ToggleState.Off;
 
     internal static bool HasExpandState(UiSemanticState state) => (state & (UiSemanticState.Expanded | UiSemanticState.Collapsed)) != 0;
 
@@ -819,10 +827,7 @@ public sealed partial class WindowsElementAutomationPeer :
         {
             if (!IsAlive) return ToggleState.Off;
             UiSemanticNode? node = Element?.GetSemanticNode();
-            if (node is null) return ToggleState.Off;
-            if (node.State.HasFlag(UiSemanticState.Indeterminate)) return ToggleState.Indeterminate;
-            if (node.State.HasFlag(UiSemanticState.Checked)) return ToggleState.On;
-            return ToggleState.Off;
+            return node is null ? ToggleState.Off : ToggleStateOf(node.State);
         }
     }
 
@@ -903,7 +908,7 @@ public sealed partial class WindowsElementAutomationPeer :
 
     private static int MapRoleToControlType(UiSemanticRole role) => role switch
     {
-        UiSemanticRole.Button => UiaNative.UiaButtonControlTypeId,
+        UiSemanticRole.Button or UiSemanticRole.ToggleButton => UiaNative.UiaButtonControlTypeId,
         UiSemanticRole.CheckBox => UiaNative.UiaCheckBoxControlTypeId,
         UiSemanticRole.RadioButton => UiaNative.UiaRadioButtonControlTypeId,
         UiSemanticRole.ComboBox => UiaNative.UiaComboBoxControlTypeId,

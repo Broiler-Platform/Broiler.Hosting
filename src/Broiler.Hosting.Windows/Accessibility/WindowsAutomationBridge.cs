@@ -459,9 +459,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     }
 
     // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
-    // Expansion is null for an element that does not expand.
+    // Expansion is null for an element that does not expand, Toggle for one that does not toggle.
     private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId,
-        ExpandCollapseState? Expansion, bool IsDataValid, string? Description);
+        ExpandCollapseState? Expansion, bool IsDataValid, string? Description, ToggleState? Toggle);
 
     private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
     {
@@ -483,7 +483,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             },
             WindowsElementAutomationPeer.HasExpandState(node.State) ? WindowsElementAutomationPeer.ExpandStateOf(node.State) : null,
             !node.State.HasFlag(UiSemanticState.Invalid),
-            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description);
+            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description,
+            WindowsElementAutomationPeer.IsToggle(node.Role) ? WindowsElementAutomationPeer.ToggleStateOf(node.State) : null);
     }
 
     // The ids of the rows exposed as the tree's children, in order.
@@ -535,6 +536,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             changes.Add(new(peer, UiaNative.UiaText_TextSelectionChangedEventId, false));
         if (before.Expansion != now.Expansion && now.Expansion is { } expansion)
             changes.Add(new(peer, UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId, true, (int)(before.Expansion ?? ExpandCollapseState.LeafNode), (int)expansion));
+        if (before.Toggle != now.Toggle && now.Toggle is { } toggle)
+            changes.Add(new(peer, UiaNative.UiaToggleToggleStatePropertyId, true, (int)(before.Toggle ?? ToggleState.Off), (int)toggle));
         if (before.IsDataValid != now.IsDataValid)
             changes.Add(new(peer, AutomationInterop.IsDataValidForFormPropertyId, true, before.IsDataValid, now.IsDataValid));
         if (before.Description != now.Description)

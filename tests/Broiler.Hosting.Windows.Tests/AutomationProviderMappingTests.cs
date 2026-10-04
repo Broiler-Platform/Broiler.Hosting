@@ -98,6 +98,28 @@ public sealed class AutomationProviderMappingTests
         Assert.Equal("code editor", bridge.GetOrCreatePeer(code).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
     }
 
+    [Fact]
+    public void AToggleButtonIsAButtonThatTogglesAndReportsItsState()
+    {
+        var (_, bridge, root) = Create();
+        var bold = new Broiler.UI.ToggleButton.Standard.StandardToggleButton { Text = "Bold" };
+        root.AddChild(bold);
+        var peer = bridge.GetOrCreatePeer(bold);
+
+        Assert.Equal(UiaNative.UiaButtonControlTypeId, peer.GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        Assert.Null(peer.GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
+        // Its click is its toggle, which is offered as Toggle alone.
+        Assert.Null(peer.GetPatternProvider(UiaNative.UiaInvokePatternId));
+        var toggle = Assert.IsAssignableFrom<IToggleProvider>(peer.GetPatternProvider(UiaNative.UiaTogglePatternId));
+        Assert.Equal(ToggleState.Off, toggle.ToggleState);
+
+        var changes = Observe(bridge, bold, peer, toggle.Toggle);
+        Assert.Equal(true, bold.IsChecked);
+        Assert.Equal(ToggleState.On, toggle.ToggleState);
+        Assert.Contains(changes, change => change.IsProperty && change.Id == UiaNative.UiaToggleToggleStatePropertyId
+            && Equals(change.OldValue, (int)ToggleState.Off) && Equals(change.NewValue, (int)ToggleState.On));
+    }
+
     private sealed class RoleElement(UiSemanticRole role) : UiElement
     {
         protected override UiSemanticNode GetSemanticNodeCore() =>
