@@ -375,7 +375,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     }
 
     // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
-    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId);
+    // Expansion is null for an element that does not expand.
+    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId,
+        ExpandCollapseState? Expansion, bool IsDataValid, string? Description);
 
     private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
     {
@@ -388,7 +390,10 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             value,
             value is null ? 0 : text?.SelectionLength > 0 ? text.SelectionStart : text?.CaretIndex ?? 0,
             value is null ? 0 : text?.SelectionLength ?? 0,
-            element switch { UiListView list => list.SelectedItemId, UiTabView tabs => tabs.SelectedTab?.Id, _ => null });
+            element switch { UiListView list => list.SelectedItemId, UiTabView tabs => tabs.SelectedTab?.Id, _ => null },
+            WindowsElementAutomationPeer.HasExpandState(node.State) ? WindowsElementAutomationPeer.ExpandStateOf(node.State) : null,
+            !node.State.HasFlag(UiSemanticState.Invalid),
+            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description);
     }
 
     /// <summary>A UIA event or property change detected for an element, raised only while clients listen.</summary>
@@ -431,6 +436,12 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
         if (now.Text is not null && (before.SelectionStart, before.SelectionLength) != (now.SelectionStart, now.SelectionLength))
             changes.Add(new(peer, UiaNative.UiaText_TextSelectionChangedEventId, false));
+        if (before.Expansion != now.Expansion && now.Expansion is { } expansion)
+            changes.Add(new(peer, UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId, true, (int)(before.Expansion ?? ExpandCollapseState.LeafNode), (int)expansion));
+        if (before.IsDataValid != now.IsDataValid)
+            changes.Add(new(peer, AutomationInterop.IsDataValidForFormPropertyId, true, before.IsDataValid, now.IsDataValid));
+        if (before.Description != now.Description)
+            changes.Add(new(peer, AutomationInterop.FullDescriptionPropertyId, true, before.Description ?? string.Empty, now.Description ?? string.Empty));
         if (before.SelectedId != now.SelectedId && now.SelectedId is { } selectedId)
         {
             IRawElementProviderSimple? selected = element switch

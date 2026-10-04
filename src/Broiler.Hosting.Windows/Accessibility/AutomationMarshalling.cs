@@ -21,6 +21,8 @@ internal static unsafe partial class AutomationMarshalling
         // Element-valued properties such as LabeledBy: the VARIANT owns one provider reference.
         IRawElementProviderSimple provider => ComVariant.CreateRaw(VarEnum.VT_UNKNOWN,
             (nint)ComInterfaceMarshaller<INativeSimple>.ConvertToUnmanaged(NativeProviderAdapter.For(provider))),
+        // Element-array properties such as DescribedBy: the VARIANT owns the SAFEARRAY, which owns a reference to each.
+        IRawElementProviderSimple[] providers => ComVariant.CreateRaw(VarEnum.VT_ARRAY | VarEnum.VT_UNKNOWN, Providers(providers)),
         _ => throw new NotSupportedException($"Unsupported UIA property type: {value.GetType().Name}"),
     };
 

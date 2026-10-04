@@ -7,6 +7,7 @@ using Broiler.Native.Windows.Accessibility;
 using Broiler.UI;
 using Broiler.UI.Button.Standard;
 using Broiler.UI.Edit.Standard;
+using Broiler.UI.Forms.Standard;
 using Broiler.UI.Label.Standard;
 using Broiler.UI.Panel.Standard;
 using Broiler.UI.RichEdit.Standard;
@@ -264,6 +265,113 @@ public sealed class AutomationProviderMappingTests
         // Nothing to read: the bridge falls back to a live-region change, read from the element's name.
         Assert.Null(StatusAnnouncements.Plan(status, ""));
         Assert.Null(StatusAnnouncements.Plan(status, null));
+    }
+
+    [Fact]
+    public void DisclosureButtonExpandsItsSectionAndControlsTheContent()
+    {
+        var (session, bridge, root) = Create();
+        var cc = new StandardEdit();
+        var copies = new FormSection("Cc and Bcc", collapsible: true, expanded: false);
+        copies.Content.AddChild(new FormField("Cc", cc));
+        copies.Content.AddChild(new FormField("Bcc", new StandardEdit()));
+        root.AddChild(copies);
+        var toggle = bridge.GetOrCreatePeer(copies.Toggle!);
+
+        var disclosure = Assert.IsAssignableFrom<IExpandCollapseProvider>(toggle.GetPatternProvider(UiaNative.UiaExpandCollapsePatternId));
+        Assert.Equal(ExpandCollapseState.Collapsed, disclosure.ExpandCollapseState);
+        // Hidden content is no place to send a reader.
+        Assert.Null(toggle.GetPropertyValue(AutomationInterop.ControllerForPropertyId));
+        // The state is on the button that has the focus, not on the group.
+        Assert.Null(bridge.GetOrCreatePeer(copies).GetPatternProvider(UiaNative.UiaExpandCollapsePatternId));
+
+        var changes = Observe(bridge, copies.Toggle!, toggle, disclosure.Expand);
+        Assert.True(copies.IsExpanded);
+        Assert.Equal(ExpandCollapseState.Expanded, disclosure.ExpandCollapseState);
+        Assert.Contains(changes, change => change.IsProperty && change.Id == UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId
+            && Equals(change.OldValue, (int)ExpandCollapseState.Collapsed) && Equals(change.NewValue, (int)ExpandCollapseState.Expanded));
+        var controlled = Assert.IsType<IRawElementProviderSimple[]>(toggle.GetPropertyValue(AutomationInterop.ControllerForPropertyId));
+        Assert.Same(bridge.GetOrCreatePeer(copies.Content), Assert.Single(controlled));
+
+        // Collapsing while a field inside has the focus moves it to the button.
+        session.SetFocus(cc);
+        disclosure.Collapse();
+        Assert.False(copies.IsExpanded);
+        Assert.Same(copies.Toggle, session.FocusedElement);
+        Assert.Equal(ExpandCollapseState.Collapsed, disclosure.ExpandCollapseState);
+    }
+
+    [Fact]
+    public void DisclosureActsThroughItsTargetAndRefusesWhenDisabled()
+    {
+        var (_, bridge, root) = Create();
+        var details = new Details();
+        var more = new StandardButton { Text = "More", Discloses = details };
+        var plain = new StandardButton { Text = "Send" };
+        root.AddChild(more);
+        root.AddChild(plain);
+
+        var disclosure = Assert.IsAssignableFrom<IExpandCollapseProvider>(bridge.GetOrCreatePeer(more).GetPatternProvider(UiaNative.UiaExpandCollapsePatternId));
+        disclosure.Expand();
+        Assert.True(details.IsExpanded);
+        Assert.Equal(ExpandCollapseState.Expanded, disclosure.ExpandCollapseState);
+        // A button that discloses nothing has no expand state at all.
+        Assert.Null(bridge.GetOrCreatePeer(plain).GetPatternProvider(UiaNative.UiaExpandCollapsePatternId));
+
+        more.IsEnabled = false;
+        var refused = Assert.Throws<System.Runtime.InteropServices.COMException>(disclosure.Collapse);
+        Assert.Equal(AutomationInterop.ElementNotEnabled, refused.HResult);
+        Assert.True(details.IsExpanded);
+    }
+
+    [Fact]
+    public void FieldErrorMakesTheControlInvalidAndDescribesItErrorFirst()
+    {
+        var (_, bridge, root) = Create();
+        var email = new StandardEdit();
+        var field = new FormField("Email address", email, "The address you sign in with.") { IsRequired = true };
+        root.AddChild(field);
+        var peer = bridge.GetOrCreatePeer(email);
+
+        Assert.Equal(true, peer.GetPropertyValue(AutomationInterop.IsRequiredForFormPropertyId));
+        Assert.Equal(true, peer.GetPropertyValue(AutomationInterop.IsDataValidForFormPropertyId));
+        Assert.Equal(["The address you sign in with."], Names(peer.GetPropertyValue(AutomationInterop.DescribedByPropertyId)));
+        Assert.Equal("The address you sign in with.", peer.GetPropertyValue(AutomationInterop.FullDescriptionPropertyId));
+
+        var changes = Observe(bridge, email, peer, () => field.SetError("Enter an email address without a display name."));
+        Assert.Equal(false, peer.GetPropertyValue(AutomationInterop.IsDataValidForFormPropertyId));
+        Assert.Equal(["Error: Enter an email address without a display name.", "The address you sign in with."],
+            Names(peer.GetPropertyValue(AutomationInterop.DescribedByPropertyId)));
+        Assert.Equal("Error: Enter an email address without a display name. The address you sign in with.",
+            peer.GetPropertyValue(AutomationInterop.FullDescriptionPropertyId));
+        Assert.Contains(changes, change => change.IsProperty && change.Id == AutomationInterop.IsDataValidForFormPropertyId && Equals(change.NewValue, false));
+        Assert.Contains(changes, change => change.IsProperty && change.Id == AutomationInterop.FullDescriptionPropertyId);
+
+        // The relation crosses the native boundary as an array of elements.
+        using (System.Runtime.InteropServices.Marshalling.ComVariant described = AutomationMarshalling.ToVariant(peer.GetPropertyValue(AutomationInterop.DescribedByPropertyId)))
+        {
+            Assert.Equal(System.Runtime.InteropServices.VarEnum.VT_ARRAY | System.Runtime.InteropServices.VarEnum.VT_UNKNOWN, described.VarType);
+            Assert.Equal(0, SafeArrayGetUBound(described.GetRawDataRef<nint>(), 1, out int upper));
+            Assert.Equal(1, upper);
+        }
+
+        Assert.Contains(Observe(bridge, email, peer, () => field.SetError(null)),
+            change => change.Id == AutomationInterop.IsDataValidForFormPropertyId && Equals(change.NewValue, true));
+        Assert.Equal(["The address you sign in with."], Names(peer.GetPropertyValue(AutomationInterop.DescribedByPropertyId)));
+    }
+
+    private static string?[] Names(object? providers) =>
+        Assert.IsType<IRawElementProviderSimple[]>(providers).Select(provider => (string?)provider.GetPropertyValue(UiaNative.UiaNamePropertyId)).ToArray();
+
+    [System.Runtime.InteropServices.DllImport("oleaut32.dll")]
+    private static extern int SafeArrayGetUBound(nint array, uint dimension, out int bound);
+
+    /// <summary>Shows and hides content of its own without being an element, as a host-side panel might.</summary>
+    private sealed class Details : IUiExpandable
+    {
+        public bool IsExpanded { get; private set; }
+        public bool Expand() => !IsExpanded && (IsExpanded = true);
+        public bool Collapse() => IsExpanded && !(IsExpanded = false);
     }
 
     // Whether a UIA client is listening is machine-wide. When one is, the bridge raises (and consumes)

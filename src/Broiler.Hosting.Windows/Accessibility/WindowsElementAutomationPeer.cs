@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Broiler.Graphics.Geometry;
 using Broiler.UI;
 using Broiler.UI.Button;
-using Broiler.UI.ComboBox;
 using Broiler.UI.Edit;
 using Broiler.UI.ListView;
 using Broiler.UI.ListView.Standard;
@@ -186,7 +185,8 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaSelectionItemPatternId when node.Role is UiSemanticRole.RadioButton => this,
             UiaNative.UiaSelectionPatternId when node.Role is UiSemanticRole.ListView or UiSemanticRole.TabView || el is UiListView or UiTabView => this,
             UiaNative.UiaTogglePatternId when node.Role is UiSemanticRole.CheckBox => this,
-            UiaNative.UiaExpandCollapsePatternId when el is UiComboBox || node.State.HasFlag(UiSemanticState.Expanded) => this,
+            // Whatever reports Expanded or Collapsed expands: a combo box, a menu, a disclosure button.
+            UiaNative.UiaExpandCollapsePatternId when HasExpandState(node.State) => this,
             UiaNative.UiaScrollItemPatternId when el.Parent is not null => this,
             // Password fields never expose their text, not even through the Text pattern.
             UiaNative.UiaTextPatternId when AutomationExposure.IsTextControl(el, node) && el is not UiEdit { IsPassword: true } => this,
@@ -270,9 +270,41 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaIsPasswordPropertyId => element is UiEdit { IsPassword: true },
             UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
             UiaNative.UiaLiveSettingPropertyId => StatusAnnouncements.LiveSettingFor(semantic) is var live and not LiveSetting.Off ? (int)live : null,
+            // Form semantics (Broiler.UI ADR 0028). The error is reached through ErrorMessage, listed
+            // before the field's own description; Description carries both for clients that never
+            // follow relations.
+            AutomationInterop.IsRequiredForFormPropertyId => semantic.State.HasFlag(UiSemanticState.Required),
+            AutomationInterop.IsDataValidForFormPropertyId => !semantic.State.HasFlag(UiSemanticState.Invalid),
+            AutomationInterop.ControllerForPropertyId => Related(element, element.Controls),
+            AutomationInterop.DescribedByPropertyId => Related(element, ShownErrorMessage(element), element.DescribedBy),
+            AutomationInterop.FullDescriptionPropertyId => string.IsNullOrWhiteSpace(semantic.Description) ? null : semantic.Description,
             _ => null,
         };
     }
+
+    // The peers of the related elements a client can go to, in order, or none.
+    private IRawElementProviderSimple[]? Related(UiElement element, params UiElement?[] related)
+    {
+        List<IRawElementProviderSimple>? peers = null;
+        foreach (UiElement? candidate in related)
+        {
+            if (!AutomationExposure.IsShownRelation(element, candidate)) continue;
+            WindowsElementAutomationPeer peer = _bridge.GetOrCreatePeer(candidate!);
+            if (!(peers ??= []).Contains(peer)) peers.Add(peer);
+        }
+        return peers?.ToArray();
+    }
+
+    // An error message counts while it says something, as it does for the element's Invalid state.
+    private static UiElement? ShownErrorMessage(UiElement element) =>
+        element.ErrorMessage is { } message && !string.IsNullOrWhiteSpace(message.GetSemanticNode().Name) ? message : null;
+
+    internal static bool HasExpandState(UiSemanticState state) => (state & (UiSemanticState.Expanded | UiSemanticState.Collapsed)) != 0;
+
+    internal static ExpandCollapseState ExpandStateOf(UiSemanticState state) =>
+        state.HasFlag(UiSemanticState.Expanded) ? ExpandCollapseState.Expanded
+        : state.HasFlag(UiSemanticState.Collapsed) ? ExpandCollapseState.Collapsed
+        : ExpandCollapseState.LeafNode;
 
     // --- IRawElementProviderFragment ---
 
@@ -746,32 +778,37 @@ public sealed class WindowsElementAutomationPeer :
 
     // --- IExpandCollapseProvider ---
 
-    public ExpandCollapseState ExpandCollapseState
-    {
-        get
-        {
-            if (!IsAlive) return ExpandCollapseState.LeafNode;
-            UiElement? el = Element;
-            if (el is UiComboBox cb)
-                return cb.IsDropDownOpen ? ExpandCollapseState.Expanded : ExpandCollapseState.Collapsed;
-            if (el?.GetSemanticNode().State.HasFlag(UiSemanticState.Expanded) == true)
-                return ExpandCollapseState.Expanded;
-            return ExpandCollapseState.Collapsed;
-        }
-    }
+    // The state is the semantic flags; Broiler.UI keeps them where the focus is, on a disclosure button.
+    public ExpandCollapseState ExpandCollapseState =>
+        IsAlive && Element is { } el ? ExpandStateOf(el.GetSemanticNode().State) : ExpandCollapseState.LeafNode;
 
     public void Expand()
     {
-        if (!IsAlive) return;
-        if (Element is UiComboBox cb)
-            cb.OpenDropDown();
+        if (IsAlive) ExpandTarget().Expand();
     }
 
     public void Collapse()
     {
-        if (!IsAlive) return;
-        if (Element is UiComboBox cb)
-            cb.CloseDropDown();
+        if (IsAlive) ExpandTarget().Collapse();
+    }
+
+    /// <summary>
+    /// What acts: the element itself when it is an <see cref="IUiExpandable"/> (a combo box, a menu, a
+    /// section), otherwise the target it <see cref="UiElement.Discloses"/>, as for a "Show Cc and Bcc" button.
+    /// </summary>
+    private IUiExpandable ExpandTarget()
+    {
+        UiElement element = Element!;
+        UiSemanticState state = element.GetSemanticNode().State;
+        if (!HasExpandState(state))
+            throw new InvalidOperationException("The element does not expand or collapse.");
+        if (!state.HasFlag(UiSemanticState.Enabled))
+            throw AutomationInterop.ElementNotEnabledException();
+        if (element is IUiExpandable expandable)
+            return expandable;
+        if (element.Discloses is { } target && target is not UiElement { IsDisposed: true })
+            return target;
+        throw new InvalidOperationException("The element reports an expand state but nothing acts on it.");
     }
 
     // --- IScrollItemProvider ---

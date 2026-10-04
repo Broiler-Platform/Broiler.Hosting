@@ -39,6 +39,26 @@ internal static class AutomationExposure
     public static string HelpText(UiElement element, string name) =>
         Placeholder(element) is { Length: > 0 } placeholder && placeholder != name ? placeholder : string.Empty;
 
+    /// <summary>
+    /// Whether a related element (what this one controls, its error message or description) can be
+    /// offered to a client: in the same session and not disposed, it and every ancestor visible, not
+    /// hidden from assistive technology, and not an ancestor of the element, which already contains it
+    /// and is no place to send a reader (Broiler.UI ADR 0028).
+    /// </summary>
+    public static bool IsShownRelation(UiElement element, UiElement? related)
+    {
+        if (related is null || related.IsDisposed || related.Session is null || related.Session != element.Session
+            || ReferenceEquals(related, element) || element.IsDescendantOf(related) || related.IsHiddenFromAccessibility)
+            return false;
+
+        for (UiElement? current = related; current is not null; current = current.Parent)
+        {
+            if (current.Visibility != UiVisibility.Visible)
+                return false;
+        }
+        return true;
+    }
+
     public static bool IsTextControl(UiElement element, UiSemanticNode node) =>
         node.Role is UiSemanticRole.Edit or UiSemanticRole.RichEdit || element is UiEdit or UiRichEdit;
 
