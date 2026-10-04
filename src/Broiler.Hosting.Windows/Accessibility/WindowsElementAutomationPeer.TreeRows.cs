@@ -131,20 +131,28 @@ public sealed partial class WindowsElementAutomationPeer
             UiaNative.UiaHasKeyboardFocusPropertyId => tree.FocusedNode == node && _bridge.Session.FocusedElement == tree,
             UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
             UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
+            AutomationInterop.IsRequiredForFormPropertyId => RowState(tree, index).HasFlag(UiSemanticState.Required),
+            AutomationInterop.IsDataValidForFormPropertyId => !RowState(tree, index).HasFlag(UiSemanticState.Invalid),
             _ => null,
         };
     }
 
     // The tree's own description of the row (label, decoration, state, level and position) while it is
     // in view; the data source's label otherwise.
-    private static string RowName(UiTreeView tree, int index)
+    private static string RowName(UiTreeView tree, int index) =>
+        RowNode(tree, index)?.Name is { Length: > 0 } name ? name
+        : tree.DataSource?.GetPresentation(tree.Rows[index].Id).Label ?? string.Empty;
+
+    // The node the tree describes the row with; only a row in view has one.
+    private static UiSemanticNode? RowNode(UiTreeView tree, int index)
     {
         (int first, int end) = VisibleRows(tree);
-        if (index >= first && index < end && tree.GetSemanticNode().Children is { } children && index - first < children.Count
-            && children[index - first].Name is { Length: > 0 } name)
-            return name;
-        return tree.DataSource?.GetPresentation(tree.Rows[index].Id).Label ?? string.Empty;
+        return index >= first && index < end && tree.GetSemanticNode().Children is { } children && index - first < children.Count
+            ? children[index - first]
+            : null;
     }
+
+    private static UiSemanticState RowState(UiTreeView tree, int index) => RowNode(tree, index)?.State ?? UiSemanticState.None;
 
     private IRawElementProviderFragment? TreeRowNavigate(NavigateDirection direction)
     {
