@@ -23,9 +23,11 @@
     <PackageVersion Include="Broiler.UI.RichEdit" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.RichEdit.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.SpinBox.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TabView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TabView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ToggleButton.Standard" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TreeView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsVersion)" />
