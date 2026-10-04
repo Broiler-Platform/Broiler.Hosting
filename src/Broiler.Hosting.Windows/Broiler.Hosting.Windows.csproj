@@ -32,6 +32,8 @@
     <PackageReference Include="Broiler.UI.RichEdit" />
     <PackageReference Include="Broiler.UI.TabView" />
     <PackageReference Include="Broiler.UI.TabView.Standard" />
+    <PackageReference Include="Broiler.UI.TreeView" />
+    <PackageReference Include="Broiler.UI.TreeView.Standard" />
     <PackageReference Include="Broiler.Graphics" />
     <PackageReference Include="Broiler.Graphics.Windows" />
     <PackageReference Include="Broiler.Native.Windows" />

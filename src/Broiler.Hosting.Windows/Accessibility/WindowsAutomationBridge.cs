@@ -8,6 +8,8 @@ using Broiler.UI;
 using Broiler.UI.ListView;
 using Broiler.UI.ListView.Standard;
 using Broiler.UI.TabView;
+using Broiler.UI.TreeView;
+using Broiler.UI.TreeView.Standard;
 
 namespace Broiler.Hosting.Windows.Accessibility;
 
@@ -37,6 +39,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     // item when rows are inserted above it, and never come to stand for another item.
     private readonly Dictionary<(long ListViewId, string ItemId), WindowsElementAutomationPeer> _itemPeers = new();
     private readonly Dictionary<(long TabViewId, string TabId), WindowsElementAutomationPeer> _tabPeers = new();
+    private readonly Dictionary<(long TreeViewId, string NodeId), WindowsElementAutomationPeer> _treeRowPeers = new();
     private readonly Dictionary<long, AutomationSnapshot> _snapshots = new();
     // An element keeps its runtime ID for its lifetime, even when its peer is dropped and made again.
     private readonly ConditionalWeakTable<UiElement, StrongBox<int>> _elementRuntimeIds = new();
@@ -169,12 +172,14 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         foreach (WindowsElementAutomationPeer peer in _elementPeers.Values) Disconnect(peer);
         foreach (WindowsElementAutomationPeer peer in _itemPeers.Values) Disconnect(peer);
         foreach (WindowsElementAutomationPeer peer in _tabPeers.Values) Disconnect(peer);
+        foreach (WindowsElementAutomationPeer peer in _treeRowPeers.Values) Disconnect(peer);
         if (_hwnd != nint.Zero)
             AutomationInterop.UiaReleaseWindowProviders(_hwnd);
 
         _elementPeers.Clear();
         _itemPeers.Clear();
         _tabPeers.Clear();
+        _treeRowPeers.Clear();
         _snapshots.Clear();
         _structureChanges.Clear();
     }
@@ -239,6 +244,17 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         var peer = new WindowsElementAutomationPeer(this, tabView, tabId);
         _tabPeers[key] = peer;
+        return peer;
+    }
+
+    internal WindowsElementAutomationPeer TreeRowPeer(UiTreeView treeView, TreeNodeId node)
+    {
+        var key = (treeView.SemanticId, node.Value);
+        if (_treeRowPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
+            return existing;
+
+        var peer = new WindowsElementAutomationPeer(this, treeView, node);
+        _treeRowPeers[key] = peer;
         return peer;
     }
 
@@ -375,9 +391,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     }
 
     // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
-    // Expansion is null for an element that does not expand.
+    // Expansion is null for an element that does not expand. Rows names a tree's rows in view.
     private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId,
-        ExpandCollapseState? Expansion, bool IsDataValid, string? Description);
+        ExpandCollapseState? Expansion, bool IsDataValid, string? Description, string? Rows);
 
     private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
     {
@@ -390,10 +406,26 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             value,
             value is null ? 0 : text?.SelectionLength > 0 ? text.SelectionStart : text?.CaretIndex ?? 0,
             value is null ? 0 : text?.SelectionLength ?? 0,
-            element switch { UiListView list => list.SelectedItemId, UiTabView tabs => tabs.SelectedTab?.Id, _ => null },
+            element switch
+            {
+                UiListView list => list.SelectedItemId,
+                UiTabView tabs => tabs.SelectedTab?.Id,
+                UiTreeView { Selection.Count: > 0 } tree => tree.Selection[^1].Value,
+                _ => null,
+            },
             WindowsElementAutomationPeer.HasExpandState(node.State) ? WindowsElementAutomationPeer.ExpandStateOf(node.State) : null,
             !node.State.HasFlag(UiSemanticState.Invalid),
-            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description);
+            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description,
+            element is UiTreeView treeView ? RowsInView(treeView) : null);
+    }
+
+    private static string RowsInView(UiTreeView tree)
+    {
+        (int first, int end) = WindowsElementAutomationPeer.ExposedRows(tree);
+        var ids = new string[end - first];
+        for (int index = first; index < end; index++)
+            ids[index - first] = tree.Rows[index].Id.Value;
+        return string.Join('\n', ids);
     }
 
     /// <summary>A UIA event or property change detected for an element, raised only while clients listen.</summary>
@@ -448,10 +480,25 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             {
                 UiListView list when list.IndexOf(selectedId) >= 0 => ItemPeer(list, selectedId),
                 UiTabView tabs when WindowsElementAutomationPeer.IndexOfTab(tabs, selectedId) >= 0 => TabPeer(tabs, selectedId),
+                UiTreeView tree when WindowsElementAutomationPeer.IndexOfRow(tree, new TreeNodeId(selectedId)) >= 0 => TreeRowPeer(tree, new TreeNodeId(selectedId)),
                 _ => null,
             };
             if (selected is not null)
                 changes.Add(new(selected, UiaNative.UiaSelectionItem_ElementSelectedEventId, false));
+        }
+
+        if (element is UiTreeView changedTree)
+        {
+            // Rows a client holds report their own expand state; rows shown or hidden change the tree's children.
+            foreach (((long treeId, string _), WindowsElementAutomationPeer row) in _treeRowPeers)
+            {
+                if (treeId != changedTree.SemanticId || !row.IsAlive || row.ExpandCollapseState == row.LastReportedExpansion)
+                    continue;
+                changes.Add(new(row, UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId, true, (int)row.LastReportedExpansion, (int)row.ExpandCollapseState));
+                row.LastReportedExpansion = row.ExpandCollapseState;
+            }
+            if (before.Rows != now.Rows)
+                QueueStructureChange(changedTree);
         }
 
         return changes;
@@ -489,6 +536,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         RemoveDeadPeers(_elementPeers, key => _snapshots.Remove(key));
         RemoveDeadPeers(_itemPeers);
         RemoveDeadPeers(_tabPeers);
+        RemoveDeadPeers(_treeRowPeers);
     }
 
     private void RemoveDeadPeers<TKey>(Dictionary<TKey, WindowsElementAutomationPeer> peers, Action<TKey>? removed = null) where TKey : notnull
@@ -554,6 +602,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private IRawElementProviderFragment? GetFirstChild(UiElement parent)
     {
+        if (parent is UiTreeView tree)
+            return WindowsElementAutomationPeer.FirstTreeRow(this, tree);
+
         if (parent is UiListView lv && lv.Items.Count > 0)
             return GetOrCreateItemPeer(lv, 0);
 
@@ -570,6 +621,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private IRawElementProviderFragment? GetLastChild(UiElement parent)
     {
+        if (parent is UiTreeView tree)
+            return WindowsElementAutomationPeer.LastTreeRow(this, tree);
+
         if (parent is UiListView lv && lv.Items.Count > 0)
             return GetOrCreateItemPeer(lv, lv.Items.Count - 1);
 
@@ -619,6 +673,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         if (hit is UiListView lv && ItemAt(lv, point) is { } item) return item;
         if (hit is UiTabView tv && TabAt(tv, point) is { } tab) return tab;
+        if (hit is UiTreeView tree && RowAt(tree, point) is { } row) return row;
         return GetOrCreatePeer(hit);
     }
 
@@ -633,6 +688,20 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             WindowsElementAutomationPeer peer = ItemPeer(list, list.Items[index].Id);
             if (peer.VisibleBounds.Contains(point)) return peer;
+        }
+        return null;
+    }
+
+    // Only rows in view can be hit, by the geometry their peers report.
+    private WindowsElementAutomationPeer? RowAt(UiTreeView tree, BPoint point)
+    {
+        // Other trees report no row geometry, and answer for themselves.
+        if (tree is not StandardTreeView) return null;
+        (int first, int end) = WindowsElementAutomationPeer.ExposedRows(tree);
+        for (int index = first; index < end; index++)
+        {
+            if (WindowsElementAutomationPeer.RowBounds(tree, index).Contains(point))
+                return TreeRowPeer(tree, tree.Rows[index].Id);
         }
         return null;
     }
@@ -661,6 +730,11 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         if (focused is UiTabView tv && tv.SelectedTab is { } tab)
         {
             return TabPeer(tv, tab.Id);
+        }
+
+        if (focused is UiTreeView tree && !tree.FocusedNode.IsNone && WindowsElementAutomationPeer.IndexOfRow(tree, tree.FocusedNode) >= 0)
+        {
+            return TreeRowPeer(tree, tree.FocusedNode);
         }
 
         return GetOrCreatePeer(focused);

@@ -12,6 +12,9 @@ internal static partial class AutomationInterop
     /// </summary>
     public const int AppendRuntimeId = 3;
 
+    public const int TreeControlTypeId = 50023;
+    public const int TreeItemControlTypeId = 50024;
+
     // Property IDs for form semantics (Broiler.UI ADR 0028).
     public const int IsRequiredForFormPropertyId = 30025;
     public const int IsDataValidForFormPropertyId = 30103;

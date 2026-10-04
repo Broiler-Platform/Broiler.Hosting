@@ -25,6 +25,8 @@
     <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TabView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TabView.Standard" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.TreeView" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Graphics.Windows" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Graphics.Linux" Version="$(BroilerGraphicsVersion)" />

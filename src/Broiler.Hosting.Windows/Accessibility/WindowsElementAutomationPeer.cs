@@ -10,14 +10,15 @@ using Broiler.UI.RichEdit;
 using Broiler.Native.Windows.Accessibility;
 using Broiler.UI.TabView;
 using Broiler.UI.TabView.Standard;
+using Broiler.UI.TreeView;
 
 namespace Broiler.Hosting.Windows.Accessibility;
 
 /// <summary>
-/// Windows UI Automation provider peer for a <see cref="UiElement"/>, virtualized list item, or tab item.
+/// Windows UI Automation provider peer for a <see cref="UiElement"/>, virtualized list item, tab item, or tree row.
 /// Implements standard control patterns (Invoke, Value, Selection, SelectionItem, Toggle, ExpandCollapse, ScrollItem).
 /// </summary>
-public sealed class WindowsElementAutomationPeer :
+public sealed partial class WindowsElementAutomationPeer :
     IRawElementProviderFragment,
     IInvokeProvider,
     IValueProvider,
@@ -110,6 +111,7 @@ public sealed class WindowsElementAutomationPeer :
         get
         {
             if (_bridge.IsTornDown) return false;
+            if (IsTreeItem) return TreeRowIsAlive;
             if (IsItem) return ListView is { } lv && IsAttached(lv) && ItemIndex >= 0;
             if (IsTab) return TabView is { } tv && IsAttached(tv) && TabIndex >= 0;
             return Element is { } el && IsAttached(el);
@@ -151,6 +153,7 @@ public sealed class WindowsElementAutomationPeer :
     public object? GetPatternProvider(int patternId)
     {
         if (!IsAlive) return null;
+        if (IsTreeItem) return TreeRowPattern(patternId);
 
         if (IsItem)
         {
@@ -197,6 +200,7 @@ public sealed class WindowsElementAutomationPeer :
     public object? GetPropertyValue(int propertyId)
     {
         if (!IsAlive) return null;
+        if (IsTreeItem) return TreeRowProperty(propertyId);
 
         if (IsItem)
         {
@@ -253,7 +257,7 @@ public sealed class WindowsElementAutomationPeer :
 
         return propertyId switch
         {
-            UiaNative.UiaControlTypePropertyId => MapRoleToControlType(semantic.Role),
+            UiaNative.UiaControlTypePropertyId => element is UiTreeView ? AutomationInterop.TreeControlTypeId : MapRoleToControlType(semantic.Role),
             UiaNative.UiaLocalizedControlTypePropertyId => semantic.Role.ToString(),
             // No type-name fallback: an unnamed element has an empty name, not its class name.
             UiaNative.UiaNamePropertyId => name,
@@ -331,6 +335,9 @@ public sealed class WindowsElementAutomationPeer :
     {
         get
         {
+            if (IsTreeItem)
+                return TreeView is { } tree && RowIndex is var row and >= 0 ? _bridge.ClipToSurface(RowBounds(tree, row)) : BRect.Empty;
+
             if (IsItem)
             {
                 return ListView is { } lv && ItemIndex is var index and >= 0 && lv.GetItemSemanticNode(index) is { } node
@@ -378,6 +385,13 @@ public sealed class WindowsElementAutomationPeer :
     {
         if (!IsAlive) return;
 
+        if (IsTreeItem)
+        {
+            // A tree has no focus apart from its selection that UIA could set; the tree takes the focus.
+            if (TreeView is { CanFocus: true } tree) _bridge.Session.SetFocus(tree);
+            return;
+        }
+
         if (IsItem)
         {
             UiListView? lv = ListView;
@@ -410,6 +424,7 @@ public sealed class WindowsElementAutomationPeer :
     public IRawElementProviderFragment? Navigate(NavigateDirection direction)
     {
         if (!IsAlive) return null;
+        if (IsTreeItem) return TreeRowNavigate(direction);
 
         if (IsItem)
         {
@@ -461,6 +476,9 @@ public sealed class WindowsElementAutomationPeer :
 
     private IRawElementProviderFragment? GetFirstChild(UiElement parent)
     {
+        if (parent is UiTreeView tree)
+            return FirstTreeRow(_bridge, tree);
+
         if (parent is UiListView lv && lv.Items.Count > 0)
             return _bridge.GetOrCreateItemPeer(lv, 0);
 
@@ -477,6 +495,9 @@ public sealed class WindowsElementAutomationPeer :
 
     private IRawElementProviderFragment? GetLastChild(UiElement parent)
     {
+        if (parent is UiTreeView tree)
+            return LastTreeRow(_bridge, tree);
+
         if (parent is UiListView lv && lv.Items.Count > 0)
             return _bridge.GetOrCreateItemPeer(lv, lv.Items.Count - 1);
 
@@ -658,6 +679,7 @@ public sealed class WindowsElementAutomationPeer :
         get
         {
             if (!IsAlive) return false;
+            if (IsTreeItem) return TreeRowIsSelected;
             if (IsItem)
             {
                 UiListView? lv = ListView;
@@ -678,6 +700,7 @@ public sealed class WindowsElementAutomationPeer :
     {
         get
         {
+            if (IsTreeItem) return TreeView is { } tree ? _bridge.GetOrCreatePeer(tree) : null;
             if (IsItem) return ListView is not null ? _bridge.GetOrCreatePeer(ListView) : null;
             if (IsTab) return TabView is not null ? _bridge.GetOrCreatePeer(TabView) : null;
             if (Element?.Parent is null) return null;
@@ -688,6 +711,12 @@ public sealed class WindowsElementAutomationPeer :
     public void Select()
     {
         if (!IsAlive) return;
+        if (IsTreeItem)
+        {
+            // As a click on the row does: just this row, without moving the focus.
+            TreeView!.SetSelection([_treeNode!.Value]);
+            return;
+        }
         if (IsItem)
         {
             UiListView? lv = ListView;
@@ -721,10 +750,20 @@ public sealed class WindowsElementAutomationPeer :
         }
     }
 
-    public void AddToSelection() => Select();
+    public void AddToSelection()
+    {
+        if (IsAlive && IsTreeItem) ChangeTreeSelection(add: true);
+        else Select();
+    }
 
     public void RemoveFromSelection()
     {
+        if (IsAlive && IsTreeItem)
+        {
+            ChangeTreeSelection(add: false);
+            return;
+        }
+
         if (IsItem && ListView is { SelectionMode: UiListSelectionMode.Multiple } lv && ItemIndex >= 0 && lv.IsSelected(_itemId!))
         {
             lv.ToggleItem(_itemId!);
@@ -745,11 +784,20 @@ public sealed class WindowsElementAutomationPeer :
         {
             return [_bridge.TabPeer(tv, tab.Id)];
         }
+        if (el is UiTreeView tree)
+        {
+            var rows = new List<IRawElementProviderSimple>();
+            foreach (TreeNodeId node in tree.Selection)
+            {
+                if (IndexOfRow(tree, node) >= 0) rows.Add(_bridge.TreeRowPeer(tree, node));
+            }
+            return rows.Count > 0 ? rows.ToArray() : null;
+        }
 
         return null;
     }
 
-    public bool CanSelectMultiple => Element is UiListView { SelectionMode: UiListSelectionMode.Multiple };
+    public bool CanSelectMultiple => Element is UiListView { SelectionMode: UiListSelectionMode.Multiple } or UiTreeView { SelectionMode: TreeSelectionMode.Extended };
 
     public bool IsSelectionRequired => Element is UiTabView;
 
@@ -780,16 +828,22 @@ public sealed class WindowsElementAutomationPeer :
 
     // The state is the semantic flags; Broiler.UI keeps them where the focus is, on a disclosure button.
     public ExpandCollapseState ExpandCollapseState =>
-        IsAlive && Element is { } el ? ExpandStateOf(el.GetSemanticNode().State) : ExpandCollapseState.LeafNode;
+        !IsAlive ? ExpandCollapseState.LeafNode
+        : IsTreeItem ? TreeRowExpansion
+        : Element is { } el ? ExpandStateOf(el.GetSemanticNode().State) : ExpandCollapseState.LeafNode;
 
     public void Expand()
     {
-        if (IsAlive) ExpandTarget().Expand();
+        if (!IsAlive) return;
+        if (IsTreeItem) ExpandTreeRow(expand: true);
+        else ExpandTarget().Expand();
     }
 
     public void Collapse()
     {
-        if (IsAlive) ExpandTarget().Collapse();
+        if (!IsAlive) return;
+        if (IsTreeItem) ExpandTreeRow(expand: false);
+        else ExpandTarget().Collapse();
     }
 
     /// <summary>
@@ -816,7 +870,11 @@ public sealed class WindowsElementAutomationPeer :
     public void ScrollIntoView()
     {
         if (!IsAlive) return;
-        if (IsItem && ListView is { } lv)
+        if (IsTreeItem)
+        {
+            ScrollTreeRowIntoView();
+        }
+        else if (IsItem && ListView is { } lv)
         {
             lv.ScrollIntoView(_itemId!);
         }

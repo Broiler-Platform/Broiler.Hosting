@@ -13,6 +13,8 @@ using Broiler.UI.Panel.Standard;
 using Broiler.UI.RichEdit.Standard;
 using Broiler.UI.Standard;
 using Broiler.UI.TabView.Standard;
+using Broiler.UI.TreeView;
+using Broiler.UI.TreeView.Standard;
 using Xunit;
 
 namespace Broiler.Hosting.Windows.Tests;
@@ -358,6 +360,76 @@ public sealed class AutomationProviderMappingTests
         Assert.Contains(Observe(bridge, email, peer, () => field.SetError(null)),
             change => change.Id == AutomationInterop.IsDataValidForFormPropertyId && Equals(change.NewValue, true));
         Assert.Equal(["The address you sign in with."], Names(peer.GetPropertyValue(AutomationInterop.DescribedByPropertyId)));
+    }
+
+    [Fact]
+    public void TreeRowsAreTreeItemsThatExpandThroughTheTree()
+    {
+        var (_, bridge, root) = Create();
+        var tree = new StandardTreeView { DataSource = new Folders() };
+        root.AddChild(tree);
+        tree.Measure(new BSize(300, 200));
+        tree.Arrange(new BRect(0, 0, 300, 200));
+        var treePeer = bridge.GetOrCreatePeer(tree);
+        Assert.Equal(AutomationInterop.TreeControlTypeId, treePeer.GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+
+        var inbox = Assert.IsType<WindowsElementAutomationPeer>(treePeer.Navigate(NavigateDirection.FirstChild));
+        var archive = Assert.IsType<WindowsElementAutomationPeer>(inbox.Navigate(NavigateDirection.NextSibling));
+        Assert.Equal(AutomationInterop.TreeItemControlTypeId, inbox.GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        Assert.StartsWith("Inbox", (string?)inbox.GetPropertyValue(UiaNative.UiaNamePropertyId));
+        Assert.Same(treePeer, inbox.Navigate(NavigateDirection.Parent));
+        Assert.Null(archive.Navigate(NavigateDirection.NextSibling));
+        // A row without children has nothing to expand.
+        Assert.Null(archive.GetPatternProvider(UiaNative.UiaExpandCollapsePatternId));
+
+        var disclosure = Assert.IsAssignableFrom<IExpandCollapseProvider>(inbox.GetPatternProvider(UiaNative.UiaExpandCollapsePatternId));
+        Assert.Equal(ExpandCollapseState.Collapsed, disclosure.ExpandCollapseState);
+        var changes = Observe(bridge, tree, treePeer, disclosure.Expand);
+        Assert.True(tree.IsExpanded(new("inbox")));
+        Assert.Equal(ExpandCollapseState.Expanded, disclosure.ExpandCollapseState);
+        Assert.Contains(changes, change => ReferenceEquals(change.Target, inbox) && change.Id == UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId
+            && Equals(change.NewValue, (int)ExpandCollapseState.Expanded));
+
+        // The children follow their row; the archive row keeps its peer below them.
+        var receipts = Assert.IsType<WindowsElementAutomationPeer>(inbox.Navigate(NavigateDirection.NextSibling));
+        Assert.StartsWith("Receipts", (string?)receipts.GetPropertyValue(UiaNative.UiaNamePropertyId));
+        Assert.Same(archive, receipts.Navigate(NavigateDirection.NextSibling)!.Navigate(NavigateDirection.NextSibling));
+
+        // Selecting a row selects just it, as a click does.
+        Assert.IsAssignableFrom<ISelectionItemProvider>(receipts.GetPatternProvider(UiaNative.UiaSelectionItemPatternId)).Select();
+        Assert.Equal([new TreeNodeId("receipts")], tree.Selection);
+        var selection = Assert.IsAssignableFrom<ISelectionProvider>(treePeer.GetPatternProvider(UiaNative.UiaSelectionPatternId)).GetSelection();
+        Assert.Same(receipts, Assert.Single(selection!));
+
+        // A row is where the tree draws it, and a point on it finds it.
+        BRect content = tree.ContentBounds;
+        var expected = new BRect(content.Left, content.Top + tree.RowHeight, content.Width, tree.RowHeight);
+        Assert.Equal((expected.X, expected.Y, expected.Width, expected.Height),
+            (receipts.BoundingRectangle.Left, receipts.BoundingRectangle.Top, receipts.BoundingRectangle.Width, receipts.BoundingRectangle.Height));
+        Assert.Same(receipts, bridge.ElementProviderFromPoint(expected.Left + 20, expected.Top + (expected.Height / 2)));
+
+        // Collapsing takes the children's rows away, and their peers with them.
+        disclosure.Collapse();
+        Assert.False(receipts.IsAlive);
+        Assert.Same(archive, inbox.Navigate(NavigateDirection.NextSibling));
+    }
+
+    private sealed class Folders : ITreeDataSource
+    {
+        private static readonly System.Collections.Generic.Dictionary<string, string[]> Children = new()
+        {
+            ["root"] = ["inbox", "archive"],
+            ["inbox"] = ["receipts", "travel"],
+            ["archive"] = [],
+            ["receipts"] = [],
+            ["travel"] = [],
+        };
+
+        public TreeNodeId Root => new("root");
+        public int GetChildCount(TreeNodeId node) => Children[node.Value].Length;
+        public TreeNodeId GetChild(TreeNodeId node, int index) => new(Children[node.Value][index]);
+        public bool CanExpand(TreeNodeId node) => Children[node.Value].Length > 0;
+        public TreeNodePresentation GetPresentation(TreeNodeId node) => new(node, char.ToUpperInvariant(node.Value[0]) + node.Value[1..]);
     }
 
     private static string?[] Names(object? providers) =>
