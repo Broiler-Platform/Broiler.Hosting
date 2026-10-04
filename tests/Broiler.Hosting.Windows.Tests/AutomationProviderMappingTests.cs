@@ -73,6 +73,37 @@ public sealed class AutomationProviderMappingTests
         Assert.Equal(true, plainPeer.GetPropertyValue(UiaNative.UiaIsControlElementPropertyId));
     }
 
+    [Fact]
+    public void StandardControlTypesAreNamedByUiaAndOnlyCustomOnesByTheProvider()
+    {
+        var (_, bridge, root) = Create();
+        var button = new StandardButton { Text = "Send" };
+        var reader = new StandardRichEdit();
+        var scroll = new Broiler.UI.ScrollView.Standard.StandardScrollView { AccessibleName = "Status and errors" };
+        var code = new RoleElement(UiSemanticRole.CodeEditor);
+        var dialog = new RoleElement(UiSemanticRole.Dialog);
+        var list = new Broiler.UI.ListView.Standard.StandardListView();
+        list.SetItems([new Broiler.UI.ListView.UiListItem("a", "Alpha")]);
+        foreach (UiElement element in new UiElement[] { button, reader, scroll, code, dialog, list }) root.AddChild(element);
+
+        // VT_EMPTY: UIA supplies "button", "edit", "pane" ... in the user's language, not "RichEdit".
+        Assert.Null(bridge.GetOrCreatePeer(button).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
+        Assert.Null(bridge.GetOrCreatePeer(reader).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
+        Assert.Null(bridge.GetOrCreateItemPeer(list, 0).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
+        Assert.Equal(UiaNative.UiaPaneControlTypeId, bridge.GetOrCreatePeer(scroll).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        Assert.Null(bridge.GetOrCreatePeer(scroll).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
+        Assert.Equal(AutomationInterop.WindowControlTypeId, bridge.GetOrCreatePeer(dialog).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        // A role UIA has no type for is custom, and says what it is in words.
+        Assert.Equal(UiaNative.UiaCustomControlTypeId, bridge.GetOrCreatePeer(code).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        Assert.Equal("code editor", bridge.GetOrCreatePeer(code).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
+    }
+
+    private sealed class RoleElement(UiSemanticRole role) : UiElement
+    {
+        protected override UiSemanticNode GetSemanticNodeCore() =>
+            new(role, role.ToString(), Bounds, UiSemanticState.Visible | UiSemanticState.Enabled, [], Id: SemanticId);
+    }
+
     /// <summary>Content taller than a scroll viewport that takes no focus itself.</summary>
     private sealed class Filler : UiElement
     {

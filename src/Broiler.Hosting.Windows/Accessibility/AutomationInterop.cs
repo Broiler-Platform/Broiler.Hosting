@@ -14,6 +14,7 @@ internal static partial class AutomationInterop
 
     public const int TreeControlTypeId = 50023;
     public const int TreeItemControlTypeId = 50024;
+    public const int WindowControlTypeId = 50032;
 
     // Property IDs for form semantics (Broiler.UI ADR 0028).
     public const int IsRequiredForFormPropertyId = 30025;

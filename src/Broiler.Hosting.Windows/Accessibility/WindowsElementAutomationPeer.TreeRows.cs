@@ -98,7 +98,6 @@ public sealed partial class WindowsElementAutomationPeer
         return propertyId switch
         {
             UiaNative.UiaControlTypePropertyId => AutomationInterop.TreeItemControlTypeId,
-            UiaNative.UiaLocalizedControlTypePropertyId => "tree item",
             UiaNative.UiaNamePropertyId => RowName(tree, index),
             UiaNative.UiaAutomationIdPropertyId => $"node_{node.Value}",
             UiaNative.UiaIsEnabledPropertyId => tree.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),

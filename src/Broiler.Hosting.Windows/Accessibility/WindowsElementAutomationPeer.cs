@@ -213,7 +213,7 @@ public sealed partial class WindowsElementAutomationPeer :
             return propertyId switch
             {
                 UiaNative.UiaControlTypePropertyId => UiaNative.UiaListItemControlTypeId,
-                UiaNative.UiaLocalizedControlTypePropertyId => "list item",
+
                 UiaNative.UiaNamePropertyId => itemName,
                 // Not repeated when the presenter's name already says it.
                 UiaNative.UiaHelpTextPropertyId => item.SecondaryText is { Length: > 0 } secondary && !itemName.Contains(secondary, StringComparison.Ordinal) ? secondary : string.Empty,
@@ -238,7 +238,7 @@ public sealed partial class WindowsElementAutomationPeer :
             return propertyId switch
             {
                 UiaNative.UiaControlTypePropertyId => UiaNative.UiaTabItemControlTypeId,
-                UiaNative.UiaLocalizedControlTypePropertyId => "tab item",
+
                 UiaNative.UiaNamePropertyId => tab.Header,
                 UiaNative.UiaAutomationIdPropertyId => $"tab_{tab.Id}",
                 UiaNative.UiaIsEnabledPropertyId => tv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
@@ -258,7 +258,8 @@ public sealed partial class WindowsElementAutomationPeer :
         return propertyId switch
         {
             UiaNative.UiaControlTypePropertyId => element is UiTreeView ? AutomationInterop.TreeControlTypeId : MapRoleToControlType(semantic.Role),
-            UiaNative.UiaLocalizedControlTypePropertyId => semantic.Role.ToString(),
+            // Standard control types are named by UIA in the user's language; only a custom one needs a name.
+            UiaNative.UiaLocalizedControlTypePropertyId => element is UiTreeView || MapRoleToControlType(semantic.Role) != UiaNative.UiaCustomControlTypeId ? null : CustomTypeName(semantic.Role),
             // No type-name fallback: an unnamed element has an empty name, not its class name.
             UiaNative.UiaNamePropertyId => name,
             UiaNative.UiaLabeledByPropertyId => element.LabeledBy is { } label && IsAttached(label) && AutomationExposure.IsExposed(label) ? _bridge.GetOrCreatePeer(label) : null,
@@ -896,9 +897,25 @@ public sealed partial class WindowsElementAutomationPeer :
         UiSemanticRole.Splitter => UiaNative.UiaSeparatorControlTypeId,
         UiSemanticRole.Group => UiaNative.UiaGroupControlTypeId,
         UiSemanticRole.Panel => UiaNative.UiaPaneControlTypeId,
+        UiSemanticRole.ScrollView => UiaNative.UiaPaneControlTypeId,
+        UiSemanticRole.Toolbar => UiaNative.UiaToolBarControlTypeId,
+        UiSemanticRole.Tooltip => UiaNative.UiaToolTipControlTypeId,
+        UiSemanticRole.Window or UiSemanticRole.Dialog => AutomationInterop.WindowControlTypeId,
         UiSemanticRole.Hyperlink => UiaNative.UiaHyperlinkControlTypeId,
         UiSemanticRole.ImageView => UiaNative.UiaImageControlTypeId,
         UiSemanticRole.StatusAnnouncement => UiaNative.UiaStatusBarControlTypeId,
         _ => UiaNative.UiaCustomControlTypeId,
     };
-}
+
+    // "code editor" for CodeEditor: the role's words, for the roles UIA has no control type for.
+    private static string CustomTypeName(UiSemanticRole role)
+    {
+        string name = role.ToString();
+        var words = new System.Text.StringBuilder(name.Length + 4);
+        for (int index = 0; index < name.Length; index++)
+        {
+            if (index > 0 && char.IsUpper(name[index])) words.Append(' ');
+            words.Append(char.ToLowerInvariant(name[index]));
+        }
+        return words.ToString();
+    }}
