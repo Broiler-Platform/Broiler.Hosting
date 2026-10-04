@@ -11,8 +11,10 @@ namespace Broiler.Hosting.Windows.Accessibility;
 /// <summary>
 /// Tree rows as UIA tree items. Broiler.UI describes only the rows in view, as a flat list whose names
 /// carry the level and position (ADR 0023); semantic child i is <c>Rows[FirstVisibleRow + i]</c>
-/// (ADR 0028). A row peer is keyed by its node id, so it follows the node when rows above it expand or
-/// collapse, and expands and collapses through <see cref="UiTreeView.Expand"/> and <see cref="UiTreeView.Collapse"/>.
+/// (ADR 0028). The tree's children are those rows and the focused row, wherever it is; a row that is
+/// neither is gone for UIA, as a removed element is. A row peer is keyed by its node id, so it follows
+/// the node when rows above it expand or collapse, and expands and collapses through
+/// <see cref="UiTreeView.Expand"/> and <see cref="UiTreeView.Collapse"/>.
 /// </summary>
 public sealed partial class WindowsElementAutomationPeer
 {
@@ -52,11 +54,35 @@ public sealed partial class WindowsElementAutomationPeer
     }
 
     /// <summary>The rows Broiler.UI describes: the visible slice, as [First, End).</summary>
-    internal static (int First, int End) ExposedRows(UiTreeView tree)
+    internal static (int First, int End) VisibleRows(UiTreeView tree)
     {
         int count = tree.Rows.Count;
         int first = Math.Clamp(tree.FirstVisibleRow, 0, count);
         return (first, Math.Min(count, first + Math.Max(0, tree.VisibleRowCapacity)));
+    }
+
+    /// <summary>
+    /// The indices of the rows exposed as the tree's children, in row order: the rows in view and the
+    /// focused row wherever it is, as a virtualizing list keeps its focused item. The focus, and the
+    /// events that announce it, then always name a child of the tree, although Broiler.UI moves the
+    /// focus before it scrolls the row into view, and a wheel scrolls without moving the focus.
+    /// </summary>
+    internal static List<int> ExposedRows(UiTreeView tree)
+    {
+        (int first, int end) = VisibleRows(tree);
+        int focused = tree.FocusedNode.IsNone ? -1 : IndexOfRow(tree, tree.FocusedNode);
+        var rows = new List<int>(end - first + 1);
+        if (focused >= 0 && focused < first) rows.Add(focused);
+        for (int index = first; index < end; index++) rows.Add(index);
+        if (focused >= end) rows.Add(focused);
+        return rows;
+    }
+
+    internal static bool IsRowExposed(UiTreeView tree, int index)
+    {
+        if (index < 0) return false;
+        (int first, int end) = VisibleRows(tree);
+        return (index >= first && index < end) || (!tree.FocusedNode.IsNone && tree.Rows[index].Id == tree.FocusedNode);
     }
 
     /// <summary>
@@ -66,7 +92,7 @@ public sealed partial class WindowsElementAutomationPeer
     /// </summary>
     internal static BRect RowBounds(UiTreeView tree, int index)
     {
-        (int first, int end) = ExposedRows(tree);
+        (int first, int end) = VisibleRows(tree);
         if (index < first || index >= end) return BRect.Empty;
         BRect visible = tree.GetVisibleBounds();
         if (tree is not StandardTreeView { RowHeight: > 0 } standard) return visible;
@@ -76,7 +102,7 @@ public sealed partial class WindowsElementAutomationPeer
         return row.Intersect(content).Intersect(visible);
     }
 
-    private bool TreeRowIsAlive => TreeView is { } tree && IsAttached(tree) && RowIndex >= 0;
+    private bool TreeRowIsAlive => TreeView is { } tree && IsAttached(tree) && IsRowExposed(tree, RowIndex);
 
     private TreeRow? CurrentRow => TreeView is { } tree && RowIndex is var index and >= 0 ? tree.Rows[index] : null;
 
@@ -113,7 +139,7 @@ public sealed partial class WindowsElementAutomationPeer
     // in view; the data source's label otherwise.
     private static string RowName(UiTreeView tree, int index)
     {
-        (int first, int end) = ExposedRows(tree);
+        (int first, int end) = VisibleRows(tree);
         if (index >= first && index < end && tree.GetSemanticNode().Children is { } children && index - first < children.Count
             && children[index - first].Name is { Length: > 0 } name)
             return name;
@@ -125,27 +151,28 @@ public sealed partial class WindowsElementAutomationPeer
         UiTreeView? tree = TreeView;
         int index = RowIndex;
         if (tree is null || index < 0) return null;
-        (int first, int end) = ExposedRows(tree);
+        if (direction == NavigateDirection.Parent) return _bridge.GetOrCreatePeer(tree);
 
+        List<int> rows = ExposedRows(tree);
+        int position = rows.IndexOf(index);
         return direction switch
         {
-            NavigateDirection.Parent => _bridge.GetOrCreatePeer(tree),
-            NavigateDirection.NextSibling when index >= first && index + 1 < end => _bridge.TreeRowPeer(tree, tree.Rows[index + 1].Id),
-            NavigateDirection.PreviousSibling when index > first && index < end => _bridge.TreeRowPeer(tree, tree.Rows[index - 1].Id),
+            NavigateDirection.NextSibling when position >= 0 && position + 1 < rows.Count => _bridge.TreeRowPeer(tree, tree.Rows[rows[position + 1]].Id),
+            NavigateDirection.PreviousSibling when position > 0 => _bridge.TreeRowPeer(tree, tree.Rows[rows[position - 1]].Id),
             _ => null,
         };
     }
 
     internal static IRawElementProviderFragment? FirstTreeRow(WindowsAutomationBridge bridge, UiTreeView tree)
     {
-        (int first, int end) = ExposedRows(tree);
-        return first < end ? bridge.TreeRowPeer(tree, tree.Rows[first].Id) : null;
+        List<int> rows = ExposedRows(tree);
+        return rows.Count > 0 ? bridge.TreeRowPeer(tree, tree.Rows[rows[0]].Id) : null;
     }
 
     internal static IRawElementProviderFragment? LastTreeRow(WindowsAutomationBridge bridge, UiTreeView tree)
     {
-        (int first, int end) = ExposedRows(tree);
-        return first < end ? bridge.TreeRowPeer(tree, tree.Rows[end - 1].Id) : null;
+        List<int> rows = ExposedRows(tree);
+        return rows.Count > 0 ? bridge.TreeRowPeer(tree, tree.Rows[rows[^1]].Id) : null;
     }
 
     private ExpandCollapseState TreeRowExpansion => CurrentRow switch
@@ -186,6 +213,7 @@ public sealed partial class WindowsElementAutomationPeer
         tree.SetSelection(selection);
     }
 
+    // Broiler.UI reports a scroll only as a render change, so the bridge is told the rows in view may differ.
     private void ScrollTreeRowIntoView()
     {
         UiTreeView tree = TreeView!;
@@ -194,5 +222,6 @@ public sealed partial class WindowsElementAutomationPeer
             tree.FirstVisibleRow = index;
         else if (index >= tree.FirstVisibleRow + tree.VisibleRowCapacity)
             tree.FirstVisibleRow = index - tree.VisibleRowCapacity + 1;
+        _bridge.QueueTreeCheck(tree);
     }
 }

@@ -787,10 +787,11 @@ public sealed partial class WindowsElementAutomationPeer :
         }
         if (el is UiTreeView tree)
         {
+            // Only the selected rows that are the tree's children; one scrolled out of view is not.
             var rows = new List<IRawElementProviderSimple>();
             foreach (TreeNodeId node in tree.Selection)
             {
-                if (IndexOfRow(tree, node) >= 0) rows.Add(_bridge.TreeRowPeer(tree, node));
+                if (IsRowExposed(tree, IndexOfRow(tree, node))) rows.Add(_bridge.TreeRowPeer(tree, node));
             }
             return rows.Count > 0 ? rows.ToArray() : null;
         }

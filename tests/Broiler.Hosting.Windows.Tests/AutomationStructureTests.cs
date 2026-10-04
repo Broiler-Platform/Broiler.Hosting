@@ -11,6 +11,8 @@ using Broiler.UI.ListView;
 using Broiler.UI.ListView.Standard;
 using Broiler.UI.Panel.Standard;
 using Broiler.UI.Standard;
+using Broiler.UI.TreeView;
+using Broiler.UI.TreeView.Standard;
 using Xunit;
 
 namespace Broiler.Hosting.Windows.Tests;
@@ -111,6 +113,81 @@ public sealed class AutomationStructureTests
         dispatcher.Drain();
 
         Assert.Equal([bridge], Assert.Single(raised));
+    }
+
+    [Fact]
+    public void MovingTheFocusDownATreeInvalidatesItsRowsOnceItHasScrolled()
+    {
+        var (dispatcher, bridge, root) = Create();
+        bridge.ClientsListening = () => true;
+        var tree = new StandardTreeView { DataSource = new Numbered(60), VisibleRowCapacity = 6 };
+        root.AddChild(tree);
+        dispatcher.Drain();
+        var treePeer = bridge.GetOrCreatePeer(tree);
+        var first = Assert.IsType<WindowsElementAutomationPeer>(treePeer.Navigate(NavigateDirection.FirstChild));
+        _ = NativeProviderAdapter.For(first);
+        var raised = new List<IReadOnlyList<IRawElementProviderSimple>>();
+        var disconnected = new List<IRawElementProviderSimple>();
+        bridge.StructureInvalidated += raised.Add;
+        bridge.ProviderDisconnected += disconnected.Add;
+
+        // As the arrow keys do: the focus moves to row 9, and then the tree scrolls it into view.
+        tree.MoveFocus(10, extendSelection: false);
+        Assert.Equal(4, tree.FirstVisibleRow);
+
+        dispatcher.Drain();
+        Assert.Equal([treePeer], Assert.Single(raised));
+        // The row that left the view is gone for clients, and the tree's children start at the view.
+        Assert.False(first.IsAlive);
+        Assert.Equal([first], disconnected);
+        Assert.StartsWith("n4,", Name(treePeer.Navigate(NavigateDirection.FirstChild)));
+    }
+
+    [Fact]
+    public void TheFocusedRowStaysATreeChildWhileTheTreeScrollsAwayFromIt()
+    {
+        var (dispatcher, bridge, root) = Create();
+        var tree = new StandardTreeView { DataSource = new Numbered(60), VisibleRowCapacity = 6, SelectionMode = TreeSelectionMode.Extended };
+        root.AddChild(tree);
+        tree.SetSelection([new("n0"), new("n2")]);
+        bridge.Session.SetFocus(tree);
+        dispatcher.Drain();
+        var treePeer = bridge.GetOrCreatePeer(tree);
+        var focused = Assert.IsType<WindowsElementAutomationPeer>(bridge.GetFocus());
+        Assert.StartsWith("n2,", Name(focused));
+
+        // A wheel scrolls without moving the focus.
+        tree.FirstVisibleRow = 20;
+        Assert.True(focused.IsAlive);
+        Assert.Same(focused, bridge.GetFocus());
+        Assert.Same(focused, treePeer.Navigate(NavigateDirection.FirstChild));
+        Assert.Same(treePeer, focused.Navigate(NavigateDirection.Parent));
+        Assert.StartsWith("n20,", Name(focused.Navigate(NavigateDirection.NextSibling)));
+        Assert.Null(focused.Navigate(NavigateDirection.PreviousSibling));
+        Assert.Equal(true, focused.GetPropertyValue(UiaNative.UiaIsOffscreenPropertyId));
+        // A selected row that is neither in view nor focused is no child, so it is not in the selection.
+        var selection = Assert.IsAssignableFrom<ISelectionProvider>(treePeer.GetPatternProvider(UiaNative.UiaSelectionPatternId)).GetSelection();
+        Assert.Same(focused, Assert.Single(selection!));
+
+        // Scrolling it back into view tells clients that the rows changed.
+        var raised = new List<IReadOnlyList<IRawElementProviderSimple>>();
+        bridge.StructureInvalidated += raised.Add;
+        Assert.IsAssignableFrom<IScrollItemProvider>(focused.GetPatternProvider(UiaNative.UiaScrollItemPatternId)).ScrollIntoView();
+        Assert.Equal(2, tree.FirstVisibleRow);
+        dispatcher.Drain();
+        Assert.Equal([treePeer], Assert.Single(raised));
+    }
+
+    private static string? Name(IRawElementProviderSimple? provider) => provider?.GetPropertyValue(UiaNative.UiaNamePropertyId) as string;
+
+    /// <summary>A flat tree of <c>n0</c> to <c>n(count - 1)</c>.</summary>
+    private sealed class Numbered(int count) : ITreeDataSource
+    {
+        public TreeNodeId Root => new("root");
+        public int GetChildCount(TreeNodeId node) => node.Value == "root" ? count : 0;
+        public TreeNodeId GetChild(TreeNodeId node, int index) => new($"n{index}");
+        public bool CanExpand(TreeNodeId node) => false;
+        public TreeNodePresentation GetPresentation(TreeNodeId node) => new(node, node.Value);
     }
 
     private static (StandardQueuedUiDispatcher Dispatcher, WindowsAutomationBridge Bridge, StandardPanel Root) Create()

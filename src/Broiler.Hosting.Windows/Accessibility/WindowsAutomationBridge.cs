@@ -196,7 +196,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _tabPeers.Clear();
         _treeRowPeers.Clear();
         _snapshots.Clear();
+        _treeRows.Clear();
         _structureChanges.Clear();
+        _treesToCheck.Clear();
     }
 
     // Only wrappers that exist were ever handed out; a peer that never reached UIA has nothing to release.
@@ -219,6 +221,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _elementPeers[element.SemanticId] = peer;
         // The first snapshot is the baseline that later changes are compared with.
         _snapshots[element.SemanticId] = Capture(element, peer);
+        if (element is UiTreeView tree)
+            _treeRows[tree.SemanticId] = RowsInView(tree);
         return peer;
     }
 
@@ -327,6 +331,10 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             return;
         }
 
+        // A tree's rows in view, which are its children, change without a structure change.
+        if (e.Change is UiSemanticChangeKind.StateChanged && e.Element is UiTreeView changedTree && _treeRows.ContainsKey(changedTree.SemanticId))
+            QueueTreeCheck(changedTree);
+
         if (!ClientsListening())
             return;
 
@@ -359,6 +367,13 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private readonly List<UiElement> _structureChanges = [];
     private bool _structureFlushQueued;
 
+    // The rows exposed by each tree a client has reached, and the trees whose rows may have changed:
+    // expanding, collapsing and moving the focus change them, and so does scrolling, which Broiler.UI
+    // reports only as a render change. Moving the focus scrolls after the selection's state change, so
+    // they are compared when the dispatcher next runs, after the change is complete.
+    private readonly Dictionary<long, string> _treeRows = new();
+    private readonly List<UiTreeView> _treesToCheck = [];
+
     /// <summary>Raised with the providers whose children a flush invalidated, for diagnostics and tests.</summary>
     internal event Action<IReadOnlyList<IRawElementProviderSimple>>? StructureInvalidated;
 
@@ -370,6 +385,21 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     {
         if (!_structureChanges.Contains(element))
             _structureChanges.Add(element);
+        QueueFlush();
+    }
+
+    /// <summary>Compares the tree's rows in view with what clients were last told when the dispatcher next runs.</summary>
+    internal void QueueTreeCheck(UiTreeView tree)
+    {
+        if (IsTornDown)
+            return;
+        if (!_treesToCheck.Contains(tree))
+            _treesToCheck.Add(tree);
+        QueueFlush();
+    }
+
+    private void QueueFlush()
+    {
         if (_structureFlushQueued)
             return;
 
@@ -379,18 +409,33 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     /// <summary>
     /// Drops the peers of what was removed, disconnecting them from UIA, and raises one
-    /// children-invalidated event on the peer of each changed parent. A parent no client has reached has
-    /// no peer and needs none, and one inside another changed parent is covered by it.
+    /// children-invalidated event on the peer of each changed parent, a tree whose exposed rows differ
+    /// included. A parent no client has reached has no peer and needs none, and one inside another
+    /// changed parent is covered by it.
     /// </summary>
     private void FlushStructureChanges()
     {
         _structureFlushQueued = false;
-        UiElement[] changed = [.. _structureChanges];
+        var changed = new List<UiElement>(_structureChanges);
+        UiTreeView[] trees = [.. _treesToCheck];
         _structureChanges.Clear();
-        if (IsTornDown || _session.IsDisposed || changed.Length == 0)
+        _treesToCheck.Clear();
+        if (IsTornDown || _session.IsDisposed || (changed.Count == 0 && trees.Length == 0))
             return;
 
         CleanDeadPeers();
+
+        foreach (UiTreeView tree in trees)
+        {
+            if (tree.IsDisposed || tree.Session != _session || !_treeRows.TryGetValue(tree.SemanticId, out string? before))
+                continue;
+            string now = RowsInView(tree);
+            if (now == before)
+                continue;
+            _treeRows[tree.SemanticId] = now;
+            if (!changed.Contains(tree))
+                changed.Add(tree);
+        }
 
         var targets = new List<UiElement>();
         foreach (UiElement element in changed)
@@ -414,9 +459,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     }
 
     // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
-    // Expansion is null for an element that does not expand. Rows names a tree's rows in view.
+    // Expansion is null for an element that does not expand.
     private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId,
-        ExpandCollapseState? Expansion, bool IsDataValid, string? Description, string? Rows);
+        ExpandCollapseState? Expansion, bool IsDataValid, string? Description);
 
     private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
     {
@@ -438,17 +483,14 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             },
             WindowsElementAutomationPeer.HasExpandState(node.State) ? WindowsElementAutomationPeer.ExpandStateOf(node.State) : null,
             !node.State.HasFlag(UiSemanticState.Invalid),
-            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description,
-            element is UiTreeView treeView ? RowsInView(treeView) : null);
+            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description);
     }
 
+    // The ids of the rows exposed as the tree's children, in order.
     private static string RowsInView(UiTreeView tree)
     {
-        (int first, int end) = WindowsElementAutomationPeer.ExposedRows(tree);
-        var ids = new string[end - first];
-        for (int index = first; index < end; index++)
-            ids[index - first] = tree.Rows[index].Id.Value;
-        return string.Join('\n', ids);
+        List<int> rows = WindowsElementAutomationPeer.ExposedRows(tree);
+        return string.Join('\n', rows.ConvertAll(index => tree.Rows[index].Id.Value));
     }
 
     /// <summary>A UIA event or property change detected for an element, raised only while clients listen.</summary>
@@ -503,7 +545,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             {
                 UiListView list when list.IndexOf(selectedId) >= 0 => ItemPeer(list, selectedId),
                 UiTabView tabs when WindowsElementAutomationPeer.IndexOfTab(tabs, selectedId) >= 0 => TabPeer(tabs, selectedId),
-                UiTreeView tree when WindowsElementAutomationPeer.IndexOfRow(tree, new TreeNodeId(selectedId)) >= 0 => TreeRowPeer(tree, new TreeNodeId(selectedId)),
+                UiTreeView tree when WindowsElementAutomationPeer.IsRowExposed(tree, WindowsElementAutomationPeer.IndexOfRow(tree, new TreeNodeId(selectedId))) => TreeRowPeer(tree, new TreeNodeId(selectedId)),
                 _ => null,
             };
             if (selected is not null)
@@ -517,7 +559,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         if (element is UiTreeView changedTree)
         {
-            // Rows a client holds report their own expand state; rows shown or hidden change the tree's children.
+            // Rows a client holds report their own expand state; rows shown or hidden are a structure change.
             foreach (((long treeId, string _), WindowsElementAutomationPeer row) in _treeRowPeers)
             {
                 if (treeId != changedTree.SemanticId || !row.IsAlive || row.ExpandCollapseState == row.LastReportedExpansion)
@@ -525,8 +567,6 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 changes.Add(new(row, UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId, true, (int)row.LastReportedExpansion, (int)row.ExpandCollapseState));
                 row.LastReportedExpansion = row.ExpandCollapseState;
             }
-            if (before.Rows != now.Rows)
-                QueueStructureChange(changedTree);
         }
 
         return changes;
@@ -561,7 +601,11 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     internal void CleanDeadPeers()
     {
         if (IsTornDown) return;
-        RemoveDeadPeers(_elementPeers, key => _snapshots.Remove(key));
+        RemoveDeadPeers(_elementPeers, key =>
+        {
+            _snapshots.Remove(key);
+            _treeRows.Remove(key);
+        });
         RemoveDeadPeers(_itemPeers);
         RemoveDeadPeers(_tabPeers);
         RemoveDeadPeers(_treeRowPeers);
@@ -728,7 +772,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     {
         // Other trees report no row geometry, and answer for themselves.
         if (tree is not StandardTreeView) return null;
-        (int first, int end) = WindowsElementAutomationPeer.ExposedRows(tree);
+        (int first, int end) = WindowsElementAutomationPeer.VisibleRows(tree);
         for (int index = first; index < end; index++)
         {
             if (WindowsElementAutomationPeer.RowBounds(tree, index).Contains(point))
