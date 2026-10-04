@@ -503,8 +503,8 @@ public sealed class AutomationProviderMappingTests
         public TreeNodePresentation GetPresentation(TreeNodeId node) => new(node, char.ToUpperInvariant(node.Value[0]) + node.Value[1..]);
     }
 
-    private static string?[] Names(object? providers) =>
-        Assert.IsType<IRawElementProviderSimple[]>(providers).Select(provider => (string?)provider.GetPropertyValue(UiaNative.UiaNamePropertyId)).ToArray();
+    private static string[] Names(object? providers) =>
+        Assert.IsType<IRawElementProviderSimple[]>(providers).Select(provider => provider.GetPropertyValue(UiaNative.UiaNamePropertyId) as string ?? string.Empty).ToArray();
 
     [System.Runtime.InteropServices.DllImport("oleaut32.dll")]
     private static extern int SafeArrayGetUBound(nint array, uint dimension, out int bound);
