@@ -391,6 +391,174 @@ public sealed class WindowsInputBridgeTests
         Assert.Equal(TextCompositionState.Cancelled, events[0].CompositionState);
     }
 
+    // WM_IME_SETCONTEXT's display options as Windows sends them: ISC_SHOWUICOMPOSITIONWINDOW (0x80000000),
+    // ISC_SHOWUIGUIDELINE (0x40000000), and ISC_SHOWUIALLCANDIDATEWINDOW (0xF).
+    private const long ShowEveryImeWindow = 0xC000000F;
+    private const long ShowGuideAndCandidates = 0x4000000F;
+    private static readonly nint EveryImeWindow = unchecked((nint)ShowEveryImeWindow);
+
+    private static long DisplayOptions(nint lParam) => lParam.ToInt64() & 0xFFFFFFFF;
+
+    [Fact]
+    public void InlineComposition_HidesTheImeCompositionWindow_AndKeepsItsCandidates()
+    {
+        using var window = new ProbeWindow(ImmNative.WM_IME_SETCONTEXT);
+        var (_, bridge, _) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        Assert.True(bridge.DrawsCompositionInline);
+
+        window.Send(ImmNative.WM_IME_SETCONTEXT, 1, EveryImeWindow);
+        window.Send(ImmNative.WM_IME_SETCONTEXT, 0, EveryImeWindow);
+        bridge.DrawsCompositionInline = false;
+        window.Send(ImmNative.WM_IME_SETCONTEXT, 1, EveryImeWindow);
+
+        Assert.Equal(new nint[] { 1, 0, 1 }, window.Received.ConvertAll(received => received.WParam));
+        Assert.Equal(
+            new[] { ShowGuideAndCandidates, ShowGuideAndCandidates, ShowEveryImeWindow },
+            window.Received.ConvertAll(received => DisplayOptions(received.LParam)));
+    }
+
+    [Fact]
+    public void InlineComposition_IsKeptFromTheImeWindow_AndItsCommitIsTypedOnce()
+    {
+        using var window = new ProbeWindow(ImmNative.WM_IME_STARTCOMPOSITION, ImmNative.WM_IME_COMPOSITION, ImmNative.WM_IME_ENDCOMPOSITION);
+        var (session, bridge, events) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        var edit = FocusedEdit(session);
+        var ime = new ImeStrings(bridge);
+
+        window.Send(ImmNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        ime.Composition = "にほん";
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_COMPSTR);
+        ime.Composition = string.Empty;
+        ime.Result = "日本";
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_RESULTSTR);
+        window.Send(ImmNative.WM_IME_ENDCOMPOSITION, 0, 0);
+        // DefWindowProc never saw the commit, so no WM_CHAR copies follow: the next character is the user's.
+        window.Send(WindowNative.WmChar, '!', 0);
+
+        Assert.Equal("日本!", edit.Text);
+        Assert.Equal(
+            new TextCompositionState?[] { TextCompositionState.Started, TextCompositionState.Updated, TextCompositionState.Committed },
+            events.FindAll(ev => ev.Kind == UiInputEventKind.TextComposition).ConvertAll(ev => ev.CompositionState));
+        // Only the end of the composition goes on: the IME's window gets nothing to draw and no commit to copy.
+        Assert.Equal(new[] { ImmNative.WM_IME_ENDCOMPOSITION }, window.Received.ConvertAll(received => received.Message));
+    }
+
+    [Fact]
+    public void InlineComposition_StillSuppressesCopiesOfItsCommit()
+    {
+        // A host that passes the commit on itself gets the copies; they are not typed twice.
+        using var window = new ProbeWindow(ImmNative.WM_IME_COMPOSITION);
+        var (session, bridge, _) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        var edit = FocusedEdit(session);
+        _ = new ImeStrings(bridge) { Result = "日本" };
+
+        window.Send(ImmNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_RESULTSTR);
+        window.Send(WindowNative.WmChar, '日', 1);
+        window.Send(WindowNative.WmChar, '本', 1);
+        window.Send(WindowNative.WmChar, '!', 1);
+
+        Assert.Empty(window.Received);
+        Assert.Equal("日本!", edit.Text);
+    }
+
+    [Fact]
+    public void InlineComposition_PassesOnAResultItCouldNotRead()
+    {
+        using var window = new ProbeWindow(ImmNative.WM_IME_COMPOSITION);
+        var (session, bridge, events) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        var edit = FocusedEdit(session);
+        _ = new ImeStrings(bridge);
+
+        window.Send(ImmNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_RESULTSTR);
+        // DefWindowProc reads the result itself and delivers it as WM_IME_CHAR, then WM_CHAR.
+        window.Send(WindowNative.WmChar, '日', 1);
+
+        Assert.Equal((nint)ImmNative.GCS_RESULTSTR, Assert.Single(window.Received).LParam);
+        Assert.DoesNotContain(events, ev => ev.CompositionState == TextCompositionState.Committed);
+        Assert.Equal("日", edit.Text);
+    }
+
+    [Fact]
+    public void CompositionDrawnByTheIme_IsPassedOnWhole_AndItsCommitIsTypedOnce()
+    {
+        using var window = new ProbeWindow(ImmNative.WM_IME_STARTCOMPOSITION, ImmNative.WM_IME_COMPOSITION, ImmNative.WM_IME_ENDCOMPOSITION);
+        var (session, bridge, _) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        bridge.DrawsCompositionInline = false;
+        var edit = FocusedEdit(session);
+        var ime = new ImeStrings(bridge);
+
+        window.Send(ImmNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        ime.Composition = "にほん";
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_COMPSTR);
+        ime.Composition = string.Empty;
+        ime.Result = "日本";
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_RESULTSTR);
+        // DefWindowProc copies the commit as WM_CHAR.
+        window.Send(WindowNative.WmChar, '日', 1);
+        window.Send(WindowNative.WmChar, '本', 1);
+        window.Send(ImmNative.WM_IME_ENDCOMPOSITION, 0, 0);
+
+        Assert.Equal("日本", edit.Text);
+        Assert.Equal(
+            new[] { ImmNative.WM_IME_STARTCOMPOSITION, ImmNative.WM_IME_COMPOSITION, ImmNative.WM_IME_COMPOSITION, ImmNative.WM_IME_ENDCOMPOSITION },
+            window.Received.ConvertAll(received => received.Message));
+    }
+
+    [Fact]
+    public void InlineComposition_TellsTheDefaultImeWindowNotToShowTheComposition()
+    {
+        // End to end: DefWindowProc hands WM_IME_SETCONTEXT to the thread's default IME window, which shows
+        // the IME's own composition, candidate, and guide windows as its display options say.
+        using var window = new ProbeWindow(ImmNative.WM_IME_SETCONTEXT);
+        window.PassedOn.Add(ImmNative.WM_IME_SETCONTEXT);
+        nint imeWindow = ImeWindowRecorder.DefaultImeWindow(window.Handle);
+        if (imeWindow == 0)
+        {
+            // Only a system without IME support has no default IME window.
+            Assert.Equal(0, WindowNative.GetSystemMetrics(ImeWindowRecorder.SmImmEnabled));
+            return;
+        }
+
+        var (_, bridge, _) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        using var ime = new ImeWindowRecorder(imeWindow, ImmNative.WM_IME_SETCONTEXT);
+
+        window.Send(ImmNative.WM_IME_SETCONTEXT, 1, EveryImeWindow);
+        bridge.DrawsCompositionInline = false;
+        window.Send(ImmNative.WM_IME_SETCONTEXT, 1, EveryImeWindow);
+        var received = ime.Received.ConvertAll(message => (message.WParam, DisplayOptions(message.LParam)));
+        window.Send(ImmNative.WM_IME_SETCONTEXT, 0, EveryImeWindow);
+
+        Assert.Equal(new[] { ((nint)1, ShowGuideAndCandidates), ((nint)1, ShowEveryImeWindow) }, received);
+    }
+
+    private static StandardEdit FocusedEdit(UiSession session)
+    {
+        var edit = new StandardEdit();
+        edit.Arrange(new BRect(0, 0, 300, 30));
+        session.AddRoot(edit);
+        session.SetFocus(edit);
+        return edit;
+    }
+
+    /// <summary>The strings an injected IME reports, read when a composition message arrives.</summary>
+    private sealed class ImeStrings
+    {
+        public ImeStrings(WindowsInputBridge bridge) =>
+            bridge.CompositionStringProvider = (_, index) =>
+                index == ImmNative.GCS_RESULTSTR ? Result : index == ImmNative.GCS_COMPSTR ? Composition : string.Empty;
+
+        public string Composition { get; set; } = string.Empty;
+        public string Result { get; set; } = string.Empty;
+    }
+
     [Fact]
     public void PrecisionMouseWheel_MaintainsSubNotchPrecisionAndAxis()
     {
