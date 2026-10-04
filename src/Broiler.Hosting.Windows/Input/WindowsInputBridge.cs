@@ -39,10 +39,9 @@ public sealed class WindowsInputBridge : IDisposable
     // The WM_CHAR copies Windows sends after an IME commit, still expected, and when the commit's
     // dispatch finished. The copies follow the commit at once and in order, so the first other
     // character, a new composition, or a focus change ends the suppression; the time limit is a backstop.
-    // DefWindowProc makes the copies from a commit it is passed. With DrawsCompositionInline the bridge
-    // keeps the commit from it and none come, but the suppression is armed all the same, for a host that
-    // passes the commit on itself. The cost: the commit's first character typed again as plain text, before
-    // anything else and within the time limit, is taken for a copy.
+    // DefWindowProc makes the copies from a commit it is passed, so the suppression is armed only then. A commit
+    // the bridge keeps from it (DrawsCompositionInline, through the subclass) has no copies, and the commit's
+    // first character typed again right after it is the user's.
     private string _lastCommittedImeString = string.Empty;
     private long _lastCommittedImeTimestamp;
     private static readonly TimeSpan CommittedCopyWindow = TimeSpan.FromMilliseconds(500);
@@ -53,15 +52,18 @@ public sealed class WindowsInputBridge : IDisposable
     /// <summary>
     /// Whether the application draws the IME composition itself, as Broiler.UI's editors do; true by default.
     /// The IME then does not show it a second time in its own composition window: WM_IME_SETCONTEXT reaches
-    /// DefWindowProc without ISC_SHOWUICOMPOSITIONWINDOW, and WM_IME_STARTCOMPOSITION and the
-    /// WM_IME_COMPOSITION messages the bridge has read do not reach it at all, so DefWindowProc makes no
-    /// WM_IME_CHAR or WM_CHAR copies of a commit either. The IME's candidate list and guide still show.
+    /// DefWindowProc without ISC_SHOWUICOMPOSITIONWINDOW, and WM_IME_STARTCOMPOSITION and every
+    /// WM_IME_COMPOSITION except one whose result string the bridge could not read do not reach it at all,
+    /// so DefWindowProc makes no WM_IME_CHAR or WM_CHAR copies of a commit either, and the bridge expects
+    /// none. The IME's candidate list and guide still show.
     /// </summary>
     /// <remarks>
     /// Only messages that reach the bridge through its subclass of the render window are affected, and
     /// WM_IME_SETCONTEXT follows a change from the next time the window's input context is activated.
-    /// A control that draws no composition, such as a password field, should have the IME turned off while
-    /// it has the focus, as native password boxes do; otherwise its composition is shown nowhere.
+    /// The setting covers the whole render window, not the focused element. While an element that draws no
+    /// composition has the focus (a password field, but also a list, tree, menu, or button), the host should
+    /// turn the IME off for the window, as native password boxes do; otherwise a composition started there
+    /// is shown nowhere.
     /// </remarks>
     public bool DrawsCompositionInline { get; set; } = true;
 
@@ -180,6 +182,7 @@ public sealed class WindowsInputBridge : IDisposable
 
             case ImmNative.WM_IME_COMPOSITION:
                 long compFlags = lParam.ToInt64();
+                bool keptFromDefWindowProc = DrawsCompositionInline && fromSubclass;
                 bool resultUnread = false;
                 if ((compFlags & ImmNative.GCS_RESULTSTR) != 0)
                 {
@@ -195,7 +198,7 @@ public sealed class WindowsInputBridge : IDisposable
                             Source: InputEventSource.Synthetic)));
                         // Measured from the end of the dispatch: a slow first insertion (JIT, first
                         // layout) must not use up the window before the copies arrive.
-                        _lastCommittedImeString = resultText;
+                        _lastCommittedImeString = keptFromDefWindowProc ? string.Empty : resultText;
                         _lastCommittedImeTimestamp = Clock.GetTimestamp();
                     }
                 }
@@ -210,9 +213,9 @@ public sealed class WindowsInputBridge : IDisposable
                         Source: InputEventSource.Synthetic)));
                 }
                 // Passed on, the IME's window would draw the composition again, and DefWindowProc would turn
-                // the result into WM_IME_CHAR and WM_CHAR. A result the bridge could not read goes on, so that
-                // path still delivers it.
-                if (DrawsCompositionInline && !resultUnread)
+                // the result into WM_IME_CHAR and WM_CHAR. Only a result the bridge could not read goes on, so
+                // that path still delivers it; any other composition message, read or not, stops here.
+                if (keptFromDefWindowProc && !resultUnread)
                     return 0;
                 break;
 

@@ -446,23 +446,42 @@ public sealed class WindowsInputBridgeTests
     }
 
     [Fact]
-    public void InlineComposition_StillSuppressesCopiesOfItsCommit()
+    public void InlineComposition_HasNoCopies_SoItsFirstCharacterTypedRightAfterIsTyped()
     {
-        // A host that passes the commit on itself gets the copies; they are not typed twice.
+        // DefWindowProc never saw the commit, so no WM_CHAR copies of it come: a 日 typed at once is the user's.
+        // (A host that calls ProcessNativeMessage itself and passes the commit on still has its copies
+        // suppressed, as ImeComposition_LifecycleAndDuplicateSuppression_MaintainsExactlyOnceDelivery shows.)
         using var window = new ProbeWindow(ImmNative.WM_IME_COMPOSITION);
         var (session, bridge, _) = CreateTestHarness(0, window.Handle);
         using var attached = bridge;
+        bridge.Clock = new ManualClock();
         var edit = FocusedEdit(session);
         _ = new ImeStrings(bridge) { Result = "日本" };
 
         window.Send(ImmNative.WM_IME_STARTCOMPOSITION, 0, 0);
         window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_RESULTSTR);
         window.Send(WindowNative.WmChar, '日', 1);
-        window.Send(WindowNative.WmChar, '本', 1);
-        window.Send(WindowNative.WmChar, '!', 1);
 
         Assert.Empty(window.Received);
-        Assert.Equal("日本!", edit.Text);
+        Assert.Equal("日本日", edit.Text);
+    }
+
+    [Fact]
+    public void InlineComposition_KeepsACompositionMessageWithNothingToDeliverFromTheImeWindow()
+    {
+        // Only a result the bridge could not read goes on (below). A message with no strings, or a composition
+        // string the bridge could not read, has no text DefWindowProc could deliver, and the IME's window is
+        // not to draw it.
+        using var window = new ProbeWindow(ImmNative.WM_IME_COMPOSITION);
+        var (_, bridge, _) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        _ = new ImeStrings(bridge);
+
+        window.Send(ImmNative.WM_IME_STARTCOMPOSITION, 0, 0);
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, 0);
+        window.Send(ImmNative.WM_IME_COMPOSITION, 0, (nint)ImmNative.GCS_COMPSTR);
+
+        Assert.Empty(window.Received);
     }
 
     [Fact]
@@ -491,6 +510,7 @@ public sealed class WindowsInputBridgeTests
         var (session, bridge, _) = CreateTestHarness(0, window.Handle);
         using var attached = bridge;
         bridge.DrawsCompositionInline = false;
+        bridge.Clock = new ManualClock();
         var edit = FocusedEdit(session);
         var ime = new ImeStrings(bridge);
 
