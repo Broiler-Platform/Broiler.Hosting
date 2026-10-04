@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Broiler.Graphics.Geometry;
 using Broiler.Native.Windows;
 using Broiler.Native.Windows.Accessibility;
@@ -32,9 +33,15 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private readonly Func<double> _scaleProvider;
 
     private readonly Dictionary<long, WindowsElementAutomationPeer> _elementPeers = new();
-    private readonly Dictionary<(long ListViewId, int Index), WindowsElementAutomationPeer> _itemPeers = new();
-    private readonly Dictionary<(long TabViewId, int Index), WindowsElementAutomationPeer> _tabPeers = new();
+    // Items and tabs are keyed by their id, not their index, so a peer and its runtime ID follow the
+    // item when rows are inserted above it, and never come to stand for another item.
+    private readonly Dictionary<(long ListViewId, string ItemId), WindowsElementAutomationPeer> _itemPeers = new();
+    private readonly Dictionary<(long TabViewId, string TabId), WindowsElementAutomationPeer> _tabPeers = new();
     private readonly Dictionary<long, AutomationSnapshot> _snapshots = new();
+    // An element keeps its runtime ID for its lifetime, even when its peer is dropped and made again.
+    private readonly ConditionalWeakTable<UiElement, StrongBox<int>> _elementRuntimeIds = new();
+    private readonly int _rootRuntimeId;
+    private int _lastRuntimeId;
 
     private bool _isDisposed;
     private readonly int _uiThread = Environment.CurrentManagedThreadId;
@@ -65,6 +72,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _root = root ?? throw new ArgumentNullException(nameof(root));
         _scaleProvider = scaleProvider ?? (() => 1.0);
+        _rootRuntimeId = AllocateRuntimeId();
 
         _session.SemanticChanged += OnSemanticChanged;
 
@@ -112,30 +120,57 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         return peer;
     }
 
+    /// <summary>The peer of the item now at <paramref name="index"/>; it follows that item, not the index.</summary>
     public WindowsElementAutomationPeer GetOrCreateItemPeer(UiListView listView, int index)
     {
         ArgumentNullException.ThrowIfNull(listView);
+        if ((uint)index >= (uint)listView.Items.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+        return ItemPeer(listView, listView.Items[index].Id);
+    }
 
-        var key = (listView.SemanticId, index);
+    /// <summary>The peer of the tab now at <paramref name="index"/>; it follows that tab, not the index.</summary>
+    public WindowsElementAutomationPeer GetOrCreateTabPeer(UiTabView tabView, int index)
+    {
+        ArgumentNullException.ThrowIfNull(tabView);
+        if ((uint)index >= (uint)tabView.Tabs.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+        return TabPeer(tabView, tabView.Tabs[index].Id);
+    }
+
+    internal WindowsElementAutomationPeer ItemPeer(UiListView listView, string itemId)
+    {
+        var key = (listView.SemanticId, itemId);
         if (_itemPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
             return existing;
 
-        var peer = new WindowsElementAutomationPeer(this, listView, index);
+        var peer = new WindowsElementAutomationPeer(this, listView, itemId);
         _itemPeers[key] = peer;
         return peer;
     }
 
-    public WindowsElementAutomationPeer GetOrCreateTabPeer(UiTabView tabView, int index)
+    internal WindowsElementAutomationPeer TabPeer(UiTabView tabView, string tabId)
     {
-        ArgumentNullException.ThrowIfNull(tabView);
-
-        var key = (tabView.SemanticId, index);
+        var key = (tabView.SemanticId, tabId);
         if (_tabPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
             return existing;
 
-        var peer = new WindowsElementAutomationPeer(this, tabView, index);
+        var peer = new WindowsElementAutomationPeer(this, tabView, tabId);
         _tabPeers[key] = peer;
         return peer;
+    }
+
+    /// <summary>A runtime ID value unique among this bridge's providers; values are never reused.</summary>
+    internal int AllocateRuntimeId() => checked(++_lastRuntimeId);
+
+    internal int RuntimeIdFor(UiElement element)
+    {
+        if (!_elementRuntimeIds.TryGetValue(element, out StrongBox<int>? id))
+        {
+            id = new StrongBox<int>(AllocateRuntimeId());
+            _elementRuntimeIds.Add(element, id);
+        }
+        return id.Value;
     }
 
     public UiaRect GetScreenRect(BRect dipRect)
@@ -188,7 +223,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
     }
 
-    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, int SelectedIndex);
+    // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
+    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId);
 
     private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
     {
@@ -201,7 +237,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             value,
             value is null ? 0 : text?.SelectionLength > 0 ? text.SelectionStart : text?.CaretIndex ?? 0,
             value is null ? 0 : text?.SelectionLength ?? 0,
-            element switch { UiListView list => list.SelectedIndex, UiTabView tabs => tabs.SelectedIndex, _ => -1 });
+            element switch { UiListView list => list.SelectedItemId, UiTabView tabs => tabs.SelectedTab?.Id, _ => null });
     }
 
     /// <summary>A UIA event or property change detected for an element, raised only while clients listen.</summary>
@@ -244,12 +280,12 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
         if (now.Text is not null && (before.SelectionStart, before.SelectionLength) != (now.SelectionStart, now.SelectionLength))
             changes.Add(new(peer, UiaNative.UiaText_TextSelectionChangedEventId, false));
-        if (before.SelectedIndex != now.SelectedIndex && now.SelectedIndex >= 0)
+        if (before.SelectedId != now.SelectedId && now.SelectedId is { } selectedId)
         {
             IRawElementProviderSimple? selected = element switch
             {
-                UiListView list when now.SelectedIndex < list.Items.Count => GetOrCreateItemPeer(list, now.SelectedIndex),
-                UiTabView tabs when now.SelectedIndex < tabs.Tabs.Count => GetOrCreateTabPeer(tabs, now.SelectedIndex),
+                UiListView list when list.IndexOf(selectedId) >= 0 => ItemPeer(list, selectedId),
+                UiTabView tabs when WindowsElementAutomationPeer.IndexOfTab(tabs, selectedId) >= 0 => TabPeer(tabs, selectedId),
                 _ => null,
             };
             if (selected is not null)
@@ -297,15 +333,15 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             _snapshots.Remove(key);
         }
 
-        var deadItemKeys = new List<(long, int)>();
-        foreach (((long, int) key, WindowsElementAutomationPeer peer) in _itemPeers)
+        var deadItemKeys = new List<(long, string)>();
+        foreach (((long, string) key, WindowsElementAutomationPeer peer) in _itemPeers)
         {
             if (!peer.IsAlive) deadItemKeys.Add(key);
         }
         foreach (var key in deadItemKeys) _itemPeers.Remove(key);
 
-        var deadTabKeys = new List<(long, int)>();
-        foreach (((long, int) key, WindowsElementAutomationPeer peer) in _tabPeers)
+        var deadTabKeys = new List<(long, string)>();
+        foreach (((long, string) key, WindowsElementAutomationPeer peer) in _tabPeers)
         {
             if (!peer.IsAlive) deadTabKeys.Add(key);
         }
@@ -341,7 +377,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     public UiaRect BoundingRectangle => GetScreenRect(_root.Bounds);
 
-    public int[]? GetRuntimeId() => [1, unchecked((int)_hwnd), (int)_root.SemanticId];
+    // A fragment root hosted in a window returns none: UIA uses the window's own runtime ID, and prefixes
+    // every peer's appended ID with it. Without a window there is no host, so the root appends its own.
+    public int[]? GetRuntimeId() => _hwnd != nint.Zero ? null : [AutomationInterop.AppendRuntimeId, _rootRuntimeId];
 
     public IRawElementProviderSimple[]? GetEmbeddedFragmentRoots() => null;
 
@@ -448,14 +486,14 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         UiElement? focused = _session.FocusedElement;
         if (focused is null) return this;
 
-        if (focused is UiListView lv && lv.SelectedIndex >= 0 && lv.SelectedIndex < lv.Items.Count)
+        if (focused is UiListView lv && lv.SelectedItemId is { } itemId && lv.IndexOf(itemId) >= 0)
         {
-            return GetOrCreateItemPeer(lv, lv.SelectedIndex);
+            return ItemPeer(lv, itemId);
         }
 
-        if (focused is UiTabView tv && tv.SelectedIndex >= 0 && tv.SelectedIndex < tv.Tabs.Count)
+        if (focused is UiTabView tv && tv.SelectedTab is { } tab)
         {
-            return GetOrCreateTabPeer(tv, tv.SelectedIndex);
+            return TabPeer(tv, tab.Id);
         }
 
         return GetOrCreatePeer(focused);

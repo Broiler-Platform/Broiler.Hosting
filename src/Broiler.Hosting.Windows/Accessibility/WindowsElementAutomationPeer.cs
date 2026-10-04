@@ -33,33 +33,48 @@ public sealed class WindowsElementAutomationPeer :
     internal WindowsAutomationBridge Bridge => _bridge;
     private readonly WeakReference<UiElement>? _elementRef;
     private readonly WeakReference<UiListView>? _listViewRef;
-    private readonly int _itemIndex = -1;
+    private readonly string? _itemId;
     private readonly WeakReference<UiTabView>? _tabViewRef;
-    private readonly int _tabIndex = -1;
+    private readonly string? _tabId;
 
     public WindowsElementAutomationPeer(WindowsAutomationBridge bridge, UiElement element)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _elementRef = new WeakReference<UiElement>(element ?? throw new ArgumentNullException(nameof(element)));
+        RuntimeIdValue = bridge.RuntimeIdFor(element);
     }
 
+    /// <summary>A peer for the item now at <paramref name="itemIndex"/>. It follows that item, not the index, when the items change.</summary>
     public WindowsElementAutomationPeer(WindowsAutomationBridge bridge, UiListView listView, int itemIndex)
+        : this(bridge, listView, ItemIdAt(listView, itemIndex))
+    {
+    }
+
+    /// <summary>A peer for the tab now at <paramref name="tabIndex"/>. It follows that tab, not the index, when tabs move.</summary>
+    public WindowsElementAutomationPeer(WindowsAutomationBridge bridge, UiTabView tabView, int tabIndex)
+        : this(bridge, tabView, TabIdAt(tabView, tabIndex))
+    {
+    }
+
+    internal WindowsElementAutomationPeer(WindowsAutomationBridge bridge, UiListView listView, string itemId)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _listViewRef = new WeakReference<UiListView>(listView ?? throw new ArgumentNullException(nameof(listView)));
-        _itemIndex = itemIndex;
+        _itemId = itemId ?? throw new ArgumentNullException(nameof(itemId));
+        RuntimeIdValue = bridge.AllocateRuntimeId();
     }
 
-    public WindowsElementAutomationPeer(WindowsAutomationBridge bridge, UiTabView tabView, int tabIndex)
+    internal WindowsElementAutomationPeer(WindowsAutomationBridge bridge, UiTabView tabView, string tabId)
     {
         _bridge = bridge ?? throw new ArgumentNullException(nameof(bridge));
         _tabViewRef = new WeakReference<UiTabView>(tabView ?? throw new ArgumentNullException(nameof(tabView)));
-        _tabIndex = tabIndex;
+        _tabId = tabId ?? throw new ArgumentNullException(nameof(tabId));
+        RuntimeIdValue = bridge.AllocateRuntimeId();
     }
 
-    public bool IsItem => _itemIndex >= 0;
+    public bool IsItem => _itemId is not null;
 
-    public bool IsTab => _tabIndex >= 0;
+    public bool IsTab => _tabId is not null;
 
     public UiElement? Element => _elementRef is not null && _elementRef.TryGetTarget(out UiElement? el) ? el : null;
 
@@ -67,18 +82,55 @@ public sealed class WindowsElementAutomationPeer :
 
     public UiTabView? TabView => _tabViewRef is not null && _tabViewRef.TryGetTarget(out UiTabView? tv) ? tv : null;
 
-    public int ItemIndex => _itemIndex;
+    /// <summary>The id of the list item this peer stands for, or null for other peers.</summary>
+    public string? ItemId => _itemId;
 
-    public int TabIndex => _tabIndex;
+    /// <summary>The id of the tab this peer stands for, or null for other peers.</summary>
+    public string? TabId => _tabId;
+
+    /// <summary>The item's current index, resolved on every call; -1 once the item is gone.</summary>
+    public int ItemIndex => _itemId is not null && ListView is { } lv ? lv.IndexOf(_itemId) : -1;
+
+    /// <summary>The tab's current index, resolved on every call; -1 once the tab is gone.</summary>
+    public int TabIndex => _tabId is not null && TabView is { } tv ? IndexOfTab(tv, _tabId) : -1;
+
+    /// <summary>
+    /// The part of the runtime ID after <see cref="AutomationInterop.AppendRuntimeId"/>. The bridge allocates
+    /// it, so it is unique among its peers and never reused: an element keeps its value for its lifetime,
+    /// and an item or tab for as long as it exists, whatever its index.
+    /// </summary>
+    internal int RuntimeIdValue { get; }
 
     public bool IsAlive
     {
         get
         {
-            if (IsItem) return ListView is { IsDisposed: false };
-            if (IsTab) return TabView is { IsDisposed: false };
+            if (IsItem) return ListView is { IsDisposed: false } && ItemIndex >= 0;
+            if (IsTab) return TabView is { IsDisposed: false } && TabIndex >= 0;
             return Element is { IsDisposed: false };
         }
+    }
+
+    internal static int IndexOfTab(UiTabView tabView, string tabId)
+    {
+        for (int index = 0; index < tabView.Tabs.Count; index++)
+        {
+            if (string.Equals(tabView.Tabs[index].Id, tabId, StringComparison.Ordinal))
+                return index;
+        }
+        return -1;
+    }
+
+    private static string ItemIdAt(UiListView listView, int index)
+    {
+        ArgumentNullException.ThrowIfNull(listView);
+        return (uint)index < (uint)listView.Items.Count ? listView.Items[index].Id : throw new ArgumentOutOfRangeException(nameof(index));
+    }
+
+    private static string TabIdAt(UiTabView tabView, int index)
+    {
+        ArgumentNullException.ThrowIfNull(tabView);
+        return (uint)index < (uint)tabView.Tabs.Count ? tabView.Tabs[index].Id : throw new ArgumentOutOfRangeException(nameof(index));
     }
 
     // --- IRawElementProviderSimple ---
@@ -140,8 +192,9 @@ public sealed class WindowsElementAutomationPeer :
         if (IsItem)
         {
             UiListView? lv = ListView;
-            if (lv is null || _itemIndex < 0 || _itemIndex >= lv.Items.Count) return null;
-            UiListItem item = lv.Items[_itemIndex];
+            int index = ItemIndex;
+            if (lv is null || index < 0) return null;
+            UiListItem item = lv.Items[index];
 
             return propertyId switch
             {
@@ -152,8 +205,8 @@ public sealed class WindowsElementAutomationPeer :
                 UiaNative.UiaAutomationIdPropertyId => $"item_{item.Id}",
                 UiaNative.UiaIsEnabledPropertyId => lv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
                 UiaNative.UiaIsKeyboardFocusablePropertyId => true,
-                UiaNative.UiaHasKeyboardFocusPropertyId => lv.SelectedIndex == _itemIndex && _bridge.Session.FocusedElement == lv,
-                UiaNative.UiaIsOffscreenPropertyId => IsItemOffscreen(lv, _itemIndex),
+                UiaNative.UiaHasKeyboardFocusPropertyId => lv.SelectedIndex == index && _bridge.Session.FocusedElement == lv,
+                UiaNative.UiaIsOffscreenPropertyId => IsItemOffscreen(lv, index),
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
                 UiaNative.UiaItemStatusPropertyId => item.IsRead == false ? "Unread" : "Read",
                 _ => null,
@@ -163,8 +216,9 @@ public sealed class WindowsElementAutomationPeer :
         if (IsTab)
         {
             UiTabView? tv = TabView;
-            if (tv is null || _tabIndex < 0 || _tabIndex >= tv.Tabs.Count) return null;
-            UiTabItem tab = tv.Tabs[_tabIndex];
+            int index = TabIndex;
+            if (tv is null || index < 0) return null;
+            UiTabItem tab = tv.Tabs[index];
 
             return propertyId switch
             {
@@ -174,8 +228,8 @@ public sealed class WindowsElementAutomationPeer :
                 UiaNative.UiaAutomationIdPropertyId => $"tab_{tab.Id}",
                 UiaNative.UiaIsEnabledPropertyId => tv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
                 UiaNative.UiaIsKeyboardFocusablePropertyId => true,
-                UiaNative.UiaHasKeyboardFocusPropertyId => tv.SelectedIndex == _tabIndex && _bridge.Session.FocusedElement == tv,
-                UiaNative.UiaIsOffscreenPropertyId => _tabIndex >= tv.VisibleTabCapacity,
+                UiaNative.UiaHasKeyboardFocusPropertyId => tv.SelectedIndex == index && _bridge.Session.FocusedElement == tv,
+                UiaNative.UiaIsOffscreenPropertyId => index >= tv.VisibleTabCapacity,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
                 _ => null,
             };
@@ -222,9 +276,10 @@ public sealed class WindowsElementAutomationPeer :
             if (IsItem)
             {
                 UiListView? lv = ListView;
-                if (lv is null || _itemIndex < 0 || _itemIndex >= lv.Items.Count) return default;
+                int index = ItemIndex;
+                if (lv is null || index < 0) return default;
                 double height = GetItemHeight(lv);
-                double top = lv.Bounds.Top - lv.VerticalOffset + (_itemIndex * height);
+                double top = lv.Bounds.Top - lv.VerticalOffset + (index * height);
                 var dipRect = new BRect(lv.Bounds.Left, top, lv.Bounds.Width, height);
                 return _bridge.GetScreenRect(dipRect);
             }
@@ -232,10 +287,11 @@ public sealed class WindowsElementAutomationPeer :
             if (IsTab)
             {
                 UiTabView? tv = TabView;
-                if (tv is null || _tabIndex < 0 || _tabIndex >= tv.Tabs.Count) return default;
+                int index = TabIndex;
+                if (tv is null || index < 0) return default;
                 double headerHeight = (tv as StandardTabView)?.HeaderHeight ?? 32.0;
                 double tabWidth = tv.Bounds.Width / Math.Max(1, tv.Tabs.Count);
-                var dipRect = new BRect(tv.Bounds.Left + (_tabIndex * tabWidth), tv.Bounds.Top, tabWidth, headerHeight);
+                var dipRect = new BRect(tv.Bounds.Left + (index * tabWidth), tv.Bounds.Top, tabWidth, headerHeight);
                 return _bridge.GetScreenRect(dipRect);
             }
 
@@ -245,21 +301,8 @@ public sealed class WindowsElementAutomationPeer :
         }
     }
 
-    public int[]? GetRuntimeId()
-    {
-        if (!IsAlive) return null;
-        if (IsItem)
-        {
-            int id = (int)(ListView?.SemanticId ?? 0) ^ (_itemIndex + 1000);
-            return [1, unchecked((int)_bridge.Hwnd), id];
-        }
-        if (IsTab)
-        {
-            int id = (int)(TabView?.SemanticId ?? 0) ^ (_tabIndex + 2000);
-            return [1, unchecked((int)_bridge.Hwnd), id];
-        }
-        return [1, unchecked((int)_bridge.Hwnd), (int)Element!.SemanticId];
-    }
+    // UIA prefixes the appended value with the hosting window's runtime ID.
+    public int[]? GetRuntimeId() => IsAlive ? [AutomationInterop.AppendRuntimeId, RuntimeIdValue] : null;
 
     public IRawElementProviderSimple[]? GetEmbeddedFragmentRoots() => null;
 
@@ -272,7 +315,7 @@ public sealed class WindowsElementAutomationPeer :
             UiListView? lv = ListView;
             if (lv is not null)
             {
-                lv.SelectIndex(_itemIndex);
+                lv.SelectIndex(ItemIndex);
                 _bridge.Session.SetFocus(lv);
             }
             return;
@@ -283,7 +326,7 @@ public sealed class WindowsElementAutomationPeer :
             UiTabView? tv = TabView;
             if (tv is not null)
             {
-                tv.SelectIndex(_tabIndex);
+                tv.SelectIndex(TabIndex);
                 _bridge.Session.SetFocus(tv);
             }
             return;
@@ -303,13 +346,14 @@ public sealed class WindowsElementAutomationPeer :
         if (IsItem)
         {
             UiListView? lv = ListView;
-            if (lv is null) return null;
+            int index = ItemIndex;
+            if (lv is null || index < 0) return null;
 
             return direction switch
             {
                 NavigateDirection.Parent => _bridge.GetOrCreatePeer(lv),
-                NavigateDirection.NextSibling => _itemIndex + 1 < lv.Items.Count ? _bridge.GetOrCreateItemPeer(lv, _itemIndex + 1) : null,
-                NavigateDirection.PreviousSibling => _itemIndex > 0 ? _bridge.GetOrCreateItemPeer(lv, _itemIndex - 1) : null,
+                NavigateDirection.NextSibling => index + 1 < lv.Items.Count ? _bridge.GetOrCreateItemPeer(lv, index + 1) : null,
+                NavigateDirection.PreviousSibling => index > 0 ? _bridge.GetOrCreateItemPeer(lv, index - 1) : null,
                 _ => null,
             };
         }
@@ -317,15 +361,16 @@ public sealed class WindowsElementAutomationPeer :
         if (IsTab)
         {
             UiTabView? tv = TabView;
-            if (tv is null) return null;
+            int index = TabIndex;
+            if (tv is null || index < 0) return null;
 
             return direction switch
             {
                 NavigateDirection.Parent => _bridge.GetOrCreatePeer(tv),
-                NavigateDirection.NextSibling => _tabIndex + 1 < tv.Tabs.Count
-                    ? _bridge.GetOrCreateTabPeer(tv, _tabIndex + 1)
+                NavigateDirection.NextSibling => index + 1 < tv.Tabs.Count
+                    ? _bridge.GetOrCreateTabPeer(tv, index + 1)
                     : (tv.SelectedTab?.Content is { } content && AutomationExposure.IsExposed(content) ? _bridge.GetOrCreatePeer(content) : null),
-                NavigateDirection.PreviousSibling => _tabIndex > 0 ? _bridge.GetOrCreateTabPeer(tv, _tabIndex - 1) : null,
+                NavigateDirection.PreviousSibling => index > 0 ? _bridge.GetOrCreateTabPeer(tv, index - 1) : null,
                 _ => null,
             };
         }
@@ -548,12 +593,12 @@ public sealed class WindowsElementAutomationPeer :
             if (IsItem)
             {
                 UiListView? lv = ListView;
-                return lv is not null && lv.SelectedIndex == _itemIndex;
+                return lv is not null && lv.SelectedItemId == _itemId;
             }
             if (IsTab)
             {
                 UiTabView? tv = TabView;
-                return tv is not null && tv.SelectedIndex == _tabIndex;
+                return tv is not null && tv.SelectedTab?.Id == _tabId;
             }
 
             UiElement? el = Element;
@@ -578,9 +623,10 @@ public sealed class WindowsElementAutomationPeer :
         if (IsItem)
         {
             UiListView? lv = ListView;
-            if (lv is not null && _itemIndex >= 0 && _itemIndex < lv.Items.Count)
+            int index = ItemIndex;
+            if (lv is not null && index >= 0)
             {
-                lv.SelectIndex(_itemIndex);
+                lv.SelectIndex(index);
                 if (UiaNative.UiaClientsAreListening())
                     UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
@@ -590,9 +636,10 @@ public sealed class WindowsElementAutomationPeer :
         if (IsTab)
         {
             UiTabView? tv = TabView;
-            if (tv is not null && _tabIndex >= 0 && _tabIndex < tv.Tabs.Count)
+            int index = TabIndex;
+            if (tv is not null && index >= 0)
             {
-                tv.SelectIndex(_tabIndex);
+                tv.SelectIndex(index);
                 if (UiaNative.UiaClientsAreListening())
                     UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
@@ -610,12 +657,9 @@ public sealed class WindowsElementAutomationPeer :
 
     public void RemoveFromSelection()
     {
-        if (IsItem && ListView is { SelectionMode: UiListSelectionMode.Multiple } lv && _itemIndex >= 0 && _itemIndex < lv.Items.Count)
+        if (IsItem && ListView is { SelectionMode: UiListSelectionMode.Multiple } lv && ItemIndex >= 0 && lv.IsSelected(_itemId!))
         {
-            if (lv.IsSelected(lv.Items[_itemIndex].Id))
-            {
-                lv.ToggleItem(lv.Items[_itemIndex].Id);
-            }
+            lv.ToggleItem(_itemId!);
         }
     }
 
@@ -625,15 +669,13 @@ public sealed class WindowsElementAutomationPeer :
     {
         if (!IsAlive) return null;
         UiElement? el = Element;
-        if (el is UiListView lv && lv.SelectedIndex >= 0)
+        if (el is UiListView lv && lv.SelectedItemId is { } itemId && lv.IndexOf(itemId) >= 0)
         {
-            WindowsElementAutomationPeer itemPeer = _bridge.GetOrCreateItemPeer(lv, lv.SelectedIndex);
-            return [itemPeer];
+            return [_bridge.ItemPeer(lv, itemId)];
         }
-        if (el is UiTabView tv && tv.SelectedIndex >= 0)
+        if (el is UiTabView tv && tv.SelectedTab is { } tab)
         {
-            WindowsElementAutomationPeer tabPeer = _bridge.GetOrCreateTabPeer(tv, tv.SelectedIndex);
-            return [tabPeer];
+            return [_bridge.TabPeer(tv, tab.Id)];
         }
 
         return null;
@@ -703,7 +745,7 @@ public sealed class WindowsElementAutomationPeer :
         if (!IsAlive) return;
         if (IsItem && ListView is { } lv)
         {
-            lv.ScrollIntoView(_itemIndex);
+            lv.ScrollIntoView(_itemId!);
         }
         else if (Element is { } el)
         {
