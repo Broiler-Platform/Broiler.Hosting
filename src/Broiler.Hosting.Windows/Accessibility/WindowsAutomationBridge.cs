@@ -745,6 +745,10 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         // The session's own hit test: it respects overlays, such as an open drop-down drawn over the
         // fields below it, and what containers clip, such as a field scrolled out under an action bar.
         UiElement? hit = _session.HitTest(point);
+        // Another root of the session is not this bridge's to describe, and what it draws over this one
+        // hides what lies below; the window answers for that point.
+        if (hit is not null && !ReferenceEquals(hit, _root) && !hit.IsDescendantOf(_root))
+            return this;
         while (hit is not null && !ReferenceEquals(hit, _root) && !AutomationExposure.IsExposed(hit))
             hit = hit.Parent;
         if (hit is null || ReferenceEquals(hit, _root)) return this;

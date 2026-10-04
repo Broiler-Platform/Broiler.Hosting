@@ -188,6 +188,25 @@ public sealed class AutomationGeometryTests
     }
 
     [Fact]
+    public void HitTestingStaysInsideTheBridgesRoot()
+    {
+        var (session, bridge, root) = Create();
+        var below = new StandardButton { Text = "Below" };
+        root.AddChild(below);
+        Layout(below, new BRect(0, 0, 200, 40));
+        // Another root of the same session, drawn over the first, as a host's own layer might be.
+        var layer = new StandardPanel();
+        var over = new StandardButton { Text = "Over" };
+        layer.AddChild(over);
+        session.AddRoot(layer);
+        layer.Arrange(new BRect(0, 0, 100, 40));
+        over.Arrange(new BRect(0, 0, 100, 40));
+
+        Assert.Same(bridge, bridge.ElementProviderFromPoint(10, 10));
+        Assert.Same(bridge.GetOrCreatePeer(below), bridge.ElementProviderFromPoint(150, 10));
+    }
+
+    [Fact]
     public void ListItemHitTestingUsesTheReportedRows()
     {
         var (_, bridge, root) = Create();
