@@ -1,10 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Broiler.Graphics.Color;
+using Broiler.Graphics.Geometry;
+using Broiler.Graphics.RenderList;
 using Broiler.Hosting.Windows;
+using Broiler.Input;
+using Broiler.Input.Mouse;
 using Broiler.UI;
+using Broiler.UI.Button.Standard;
+using Broiler.UI.SpinBox.Standard;
 using Broiler.UI.Standard;
+using Broiler.UI.ToggleButton;
+using Broiler.UI.ToggleButton.Standard;
+using Broiler.UI.Toolbar.Standard;
 using Microsoft.Win32;
 using Xunit;
 
@@ -109,9 +119,6 @@ public sealed class WindowsThemeTests
     [MemberData(nameof(ContrastThemes))]
     public void Text_Selection_Status_And_Focus_Colors_Are_Readable_In_The_Windows_Contrast_Themes(string name, uint[] rgb, bool dark)
     {
-        // Not covered, because the palette cannot meet them yet: the control states Broiler.UI draws on the
-        // AccentSoft selection fill (a hovered secondary button, a checked toggle button, a hovered spin box
-        // arrow), which wait for a state-fill role in Broiler.UI. See CreateHighContrastTheme's remarks.
         var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
         Assert.Equal(dark, tokens.IsDark);
 
@@ -126,9 +133,73 @@ public sealed class WindowsThemeTests
         AssertContrast(tokens.SelectionText, tokens.AccentSoft, 4.5, $"{name}: selected text on the selection");
         AssertContrast(tokens.SelectionTextMuted, tokens.AccentSoft, 4.5, $"{name}: selected muted text on the selection");
         AssertContrast(tokens.OnAccent, tokens.Accent, 4.5, $"{name}: text on the accent");
+        // A hovered, pressed, or checked control. The pairs the controls draw are checked in
+        // Control_States_Are_Drawn_In_The_Highlight_Pair.
+        AssertContrast(tokens.StateText, tokens.StateFill, 4.5, $"{name}: state text on the state fill");
         // Non-text: 3:1 (WCAG 1.4.11) for the focus ring and control borders.
         AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
         AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
+    }
+
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    // A custom contrast theme whose selected text is its window text, a pairing Windows lets a user choose.
+    [InlineData("Custom", new uint[] { 0x000000, 0xFFFFFF, 0x0000A0, 0xFFFFFF, 0x000000, 0xFFFFFF, 0xA6A6A6, 0x8080FF }, true)]
+    public void Control_States_Are_Drawn_In_The_Highlight_Pair(string name, uint[] rgb, bool dark)
+    {
+        var colors = Colors(rgb);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors);
+        Assert.Equal(dark, tokens.IsDark);
+        // Windows draws a hovered, pressed, or checked control in the highlight pair. Each state is checked as
+        // the control draws it, not only as the palette names it.
+        (BColor Fill, BColor Text) highlight = (colors.Highlight, colors.HighlightText);
+
+        var button = new StandardButton { Text = "Reply" };
+        button.ApplyTheme(tokens);
+        using (var view = new StateView(button, new BRect(10, 10, 80, 30)))
+        {
+            view.Move(button.Bounds);
+            AssertDrawnReadable(highlight, view.Look(button, "Reply"), $"{name}: hovered secondary button");
+        }
+
+        var toggle = new StandardToggleButton { Text = "Flag", IsThreeState = true };
+        toggle.ApplyTheme(tokens);
+        using (var view = new StateView(toggle, new BRect(10, 10, 80, 30)))
+        {
+            view.Press(toggle.Bounds);
+            AssertDrawnReadable(highlight, view.Look(toggle, "Flag"), $"{name}: pressed toggle button");
+            view.Release(toggle.Bounds);
+            Assert.Equal(UiToggleState.On, toggle.ToggleState);
+            AssertDrawnReadable(highlight, view.Look(toggle, "Flag"), $"{name}: checked toggle button");
+            toggle.ToggleState = UiToggleState.Indeterminate;
+            AssertDrawnReadable(highlight, view.Look(toggle, "Flag"), $"{name}: indeterminate toggle button");
+        }
+
+        var spin = new StandardSpinBox { Minimum = 0, Maximum = 100, Value = 5 };
+        spin.ApplyTheme(tokens);
+        using (var view = new StateView(spin, new BRect(10, 10, 120, 32)))
+        {
+            BRect up = spin.UpArrowBounds;
+            view.Move(up);
+            BRenderList list = view.Render();
+            BColor fill = Assert.Single(list.Commands.OfType<BRenderCommand.FillRect>(), command => command.Rect == up).Color;
+            // The up arrow is drawn first.
+            BColor arrow = list.Commands.OfType<BRenderCommand.FillTriangle>().First().Color;
+            AssertDrawnReadable(highlight, (fill, arrow), $"{name}: hovered spin box arrow");
+        }
+
+        // Four 80-wide items in a bar with room for two of them.
+        var toolbar = new StandardToolbar { Padding = 10, Spacing = 4 };
+        foreach (string item in new[] { "New", "Reply", "Forward", "Delete" })
+            toolbar.AddChild(new StandardButton { Text = item, PreferredSize = new BSize(80, 30) });
+        toolbar.ApplyTheme(tokens);
+        using (var view = new StateView(toolbar, new BRect(0, 0, 220, 44)))
+        {
+            Assert.True(toolbar.OpenOverflow());
+            BRenderList list = view.Render();
+            BColor fill = Assert.Single(list.Commands.OfType<BRenderCommand.FillRoundedRect>(), command => command.Rect == toolbar.OverflowButtonBounds).Color;
+            AssertDrawnReadable(highlight, (fill, StateView.TextColor(list, "»")), $"{name}: open toolbar overflow button");
+        }
     }
 
     [Fact]
@@ -254,6 +325,13 @@ public sealed class WindowsThemeTests
         Assert.True(ratio >= minimum, $"{what}: {ratio:0.00}:1, needs {minimum}:1");
     }
 
+    /// <summary>The control drew the expected fill and label, and the label reads on the fill (4.5:1).</summary>
+    private static void AssertDrawnReadable((BColor Fill, BColor Text) expected, (BColor Fill, BColor Text) drawn, string what)
+    {
+        Assert.True(expected == drawn, $"{what}: drawn {drawn.Text} on {drawn.Fill}, expected {expected.Text} on {expected.Fill}");
+        AssertContrast(drawn.Text, drawn.Fill, 4.5, what);
+    }
+
     [Fact]
     public void Title_Bar_Rejects_Missing_Or_Invalid_Windows()
     {
@@ -311,5 +389,92 @@ public sealed class WindowsThemeTests
     {
         static BColor C(uint value) => new((byte)(value >> 16), (byte)(value >> 8), (byte)value, 255);
         return new(C(rgb[0]), C(rgb[1]), C(rgb[2]), C(rgb[3]), C(rgb[4]), C(rgb[5]), C(rgb[6]), C(rgb[7]));
+    }
+
+    /// <summary>A session showing one control in a fixed box, and a mouse to work it with.</summary>
+    private sealed class StateView : IDisposable
+    {
+        private readonly UiSession _session;
+        private long _sequence;
+
+        public StateView(UiElement element, BRect box)
+        {
+            _session = new StandardUiSessionBuilder().WithDispatcher(new ImmediateUiDispatcher()).Build(new Host());
+            _session.AddRoot(new FixedBox(element, box));
+            _session.RenderFrame();
+        }
+
+        public BRenderList Render() => _session.RenderFrame();
+
+        /// <summary>The fill drawn over the element's bounds and the color of its label, in a new frame.</summary>
+        public (BColor Fill, BColor Text) Look(UiElement element, string label)
+        {
+            BRenderList list = Render();
+            return (Assert.Single(list.Commands.OfType<BRenderCommand.FillRoundedRect>(), command => command.Rect == element.Bounds).Color, TextColor(list, label));
+        }
+
+        public static BColor TextColor(BRenderList list, string text) =>
+            Assert.Single(list.Commands.OfType<BRenderCommand.DrawText>(), command => command.Text.Text == text).Text.Color;
+
+        public void Move(BRect target) =>
+            _session.DispatchInput(UiInputEvent.FromMouseMove(new MouseMoveEvent(Header(), Middle(target), MouseButtons.None, InputEventSource.Synthetic)));
+
+        public void Press(BRect target) => Button(target, MouseButtonTransition.Down);
+
+        public void Release(BRect target) => Button(target, MouseButtonTransition.Up);
+
+        public void Dispose() => _session.Dispose();
+
+        private void Button(BRect target, MouseButtonTransition transition) =>
+            _session.DispatchInput(UiInputEvent.FromMouseButton(new MouseButtonEvent(
+                Header(),
+                Middle(target),
+                transition == MouseButtonTransition.Down ? MouseButtons.Left : MouseButtons.None,
+                MouseButton.Left,
+                transition,
+                InputEventSource.Synthetic)));
+
+        private static InputPoint Middle(BRect rect) =>
+            InputPoint.ClientDeviceIndependentPixels(rect.Left + (rect.Width / 2), rect.Top + (rect.Height / 2));
+
+        private InputEventHeader Header()
+        {
+            _sequence++;
+            return new InputEventHeader(
+                InputDeviceId.FromOpaqueValue("mouse:theme"),
+                new InputTimestamp(_sequence, TimeSpan.TicksPerSecond, "theme-tests"),
+                _sequence);
+        }
+
+        /// <summary>Arranges its one child into a fixed rectangle.</summary>
+        private sealed class FixedBox : UiElement
+        {
+            private readonly UiElement _child;
+            private readonly BRect _box;
+
+            public FixedBox(UiElement child, BRect box)
+            {
+                _child = child;
+                _box = box;
+                AddChild(child);
+            }
+
+            protected override BSize MeasureCore(BSize availableSize)
+            {
+                _child.Measure(new BSize(_box.Width, _box.Height));
+                return availableSize;
+            }
+
+            protected override void ArrangeCore(BRect finalRect) => _child.Arrange(_box);
+        }
+
+        private sealed class Host : IUiHost
+        {
+            public BSize ViewportSize { get; } = new(320, 200);
+            public double Scale => 1;
+            public BRenderList CreateRenderList(int capacity = 0) => new(capacity);
+            public void Invalidate(UiInvalidation invalidation) { }
+            public void Present(BRenderList renderList) { }
+        }
     }
 }
