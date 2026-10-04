@@ -239,7 +239,8 @@ public sealed class WindowsInputBridge : IDisposable
 
             // A key pressed with Alt (Alt+F, Alt+Space) is a menu key, not text: it goes on to DefWindowProc,
             // which opens the window menu for Alt+Space. AltGr (Ctrl+Alt) and Alt+numpad codes arrive as
-            // WM_CHAR, so no text is lost.
+            // WM_CHAR, so no text is lost. A chord the application handled on key down goes on as well: nothing
+            // marks it handled yet.
             case WindowNative.WmSysChar:
                 break;
 

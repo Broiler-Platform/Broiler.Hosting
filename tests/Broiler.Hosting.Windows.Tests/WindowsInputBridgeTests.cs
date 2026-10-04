@@ -207,10 +207,14 @@ public sealed class WindowsInputBridgeTests
         Assert.Empty(events);
     }
 
+    private const uint WmSysCommand = 0x0112;
+    private const nint ScKeyMenu = 0xF100;
+
     [Fact]
     public void AltCharacters_GoOnToTheWindowProcedure()
     {
-        using var window = new ProbeWindow(WindowNative.WmSysChar, WindowNative.WmSysDeadChar);
+        using var window = new ProbeWindow(WindowNative.WmSysChar, WindowNative.WmSysDeadChar, WmSysCommand);
+        window.PassedOn.Add(WindowNative.WmSysChar);
         var (_, bridge, events) = CreateTestHarness(0, window.Handle);
         using var attached = bridge;
         bridge.KeyStateProvider = vk => vk == WindowNative.VkMenu ? unchecked((short)0x8000) : (short)0;
@@ -219,10 +223,16 @@ public sealed class WindowsInputBridgeTests
         window.Send(WindowNative.WmSysChar, ' ', AltDownContext);
         window.Send(WindowNative.WmSysDeadChar, '^', AltDownContext);
 
-        // DefWindowProc turns them into SC_KEYMENU: Alt+Space opens the window menu.
+        // DefWindowProc asks for the keyboard menu with each Alt chord (SC_KEYMENU), which opens the window menu
+        // for Alt+Space. The probe keeps that request from the window, so no menu opens and nothing beeps.
         Assert.Equal(
-            new[] { (WindowNative.WmSysChar, (nint)'f'), (WindowNative.WmSysChar, (nint)' '), (WindowNative.WmSysDeadChar, (nint)'^') },
-            window.Received.ConvertAll(received => (received.Message, received.WParam)));
+            new[]
+            {
+                (WindowNative.WmSysChar, (nint)'f', AltDownContext), (WmSysCommand, ScKeyMenu, (nint)'f'),
+                (WindowNative.WmSysChar, (nint)' ', AltDownContext), (WmSysCommand, ScKeyMenu, (nint)' '),
+                (WindowNative.WmSysDeadChar, (nint)'^', AltDownContext),
+            },
+            window.Received);
         Assert.Empty(events);
         Assert.True(bridge.DeadKeyActive);
     }
