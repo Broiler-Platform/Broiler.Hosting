@@ -63,9 +63,14 @@ public static class WindowsTheme
     /// Known gaps: Broiler.UI draws a pressed secondary button and a pressed spin box arrow on
     /// <c>SurfaceDisabled</c>, and a hovered unchecked toggle button on <c>SurfaceAlt</c>, not on the state
     /// fill. Both are the window color here, as disabled and alternate surfaces need, so those states stay
-    /// readable but look like the control at rest. Broiler.UI also draws the progress bar's and slider's fill
-    /// in <c>Accent</c>, here the highlight color, directly on their window-colored track. That shows in the
-    /// four Windows 11 themes, but not in a custom theme whose highlight color is close to its window color.
+    /// readable but look like the control at rest. Broiler.UI also draws in <c>Accent</c>, here the highlight
+    /// color, directly on the window color: text (the label of a toggle button that was never themed, the code
+    /// editor's keywords) and marks (a checked check box's fill and border, a checked radio button's dot, the
+    /// progress bar's and slider's fill on their track, the list's unread dot, a window's or dialog's active
+    /// border). That reads in the four Windows 11 themes, but not in a custom theme whose highlight color is
+    /// close to its window color. And while the highlight text is the window text, a format code view draws
+    /// selected codes other than inline codes in the link and status colors on the highlight color, where they
+    /// need not read.
     /// </para>
     /// <para>
     /// <c>AccentText</c> colors the selected tab's label and the bar under it, an accent label, a themed toggle
