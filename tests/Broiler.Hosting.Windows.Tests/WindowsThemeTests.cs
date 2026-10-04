@@ -12,6 +12,7 @@ using Broiler.UI;
 using Broiler.UI.Button.Standard;
 using Broiler.UI.SpinBox.Standard;
 using Broiler.UI.Standard;
+using Broiler.UI.TabView.Standard;
 using Broiler.UI.ToggleButton;
 using Broiler.UI.ToggleButton.Standard;
 using Broiler.UI.Toolbar.Standard;
@@ -123,8 +124,9 @@ public sealed class WindowsThemeTests
         Assert.Equal(dark, tokens.IsDark);
 
         // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on. Accent text is the selected
-        // tab's label, an accent label and a toggle button's label at rest. The accent itself is text where a
-        // control was never themed and draws from the shared palette (a toggle button's label).
+        // tab's label, an accent label and a toggle button's label at rest; the selected tab is checked as the tab
+        // view draws it in Accent_Text_Reads_On_The_Tab_Strip_As_The_Tab_View_Draws_It. The accent itself is text
+        // where a control was never themed and draws from the shared palette (a toggle button's label).
         foreach (var (role, color) in new[] { ("text", tokens.Text), ("muted text", tokens.TextMuted),
             ("success", tokens.Success), ("warning", tokens.Warning), ("danger", tokens.Danger), ("link", tokens.Info),
             ("accent text", tokens.AccentText), ("accent", tokens.Accent) })
@@ -144,6 +146,45 @@ public sealed class WindowsThemeTests
         AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
         AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
         AssertContrast(tokens.Accent, tokens.SurfaceDisabled, 3, $"{name}: accent fill on the track");
+    }
+
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    // Custom contrast themes whose highlight is a fill that does not read as text on the window: one that still
+    // stands out as a focus ring (4.2:1), and one that blends in (1.5:1).
+    [InlineData("Custom, highlight at 4.2:1", new uint[] { 0xFFFFFF, 0x000000, 0x3A7BD5, 0x000000, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE }, false)]
+    [InlineData("Custom, highlight at 1.5:1", new uint[] { 0x000000, 0xFFFFFF, 0x0000A0, 0xFFFFFF, 0x000000, 0xFFFFFF, 0xA6A6A6, 0x8080FF }, true)]
+    public void Accent_Text_Reads_On_The_Tab_Strip_As_The_Tab_View_Draws_It(string name, uint[] rgb, bool dark)
+    {
+        var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
+        Assert.Equal(dark, tokens.IsDark);
+
+        var tabs = new StandardTabView();
+        foreach (string header in new[] { "Inbox", "Sent", "Settings" })
+            tabs.AddTab(header.ToLowerInvariant(), header);
+        tabs.ApplyTheme(tokens);
+        using var view = new StateView(tabs, new BRect(0, 0, 300, 120));
+        BRenderList list = view.Render();
+        BRect selected = tabs.GetTabHeaderBounds(tabs.SelectedIndex);
+        var fills = list.Commands.OfType<BRenderCommand.FillRoundedRect>().ToList();
+
+        // The selected tab's label is accent text, drawn on the selected header's fill.
+        BColor fill = Assert.Single(fills, command => command.Rect == selected).Color;
+        BColor label = StateView.TextColor(list, "Inbox");
+        Assert.Equal(tokens.AccentText, label);
+        AssertContrast(label, fill, 4.5, $"{name}: selected tab label on its header");
+
+        // The bar under it is a mark that is not text: 3:1 against the header's fill and against the strip, which
+        // is not filled and shows the surface the tab view lies on.
+        BColor bar = Assert.Single(fills, command => command.Rect != selected && command.Rect.Top >= selected.Top && command.Rect.Bottom <= selected.Bottom).Color;
+        Assert.Equal(tokens.AccentText, bar);
+        Assert.Equal(0, tabs.HeaderBackground.A);
+        foreach (var (what, behind) in new[] { ("its header", fill), ("the window", tokens.Surface), ("the alternate surface", tokens.SurfaceAlt) })
+            AssertContrast(bar, behind, 3, $"{name}: selected tab bar on {what}");
+
+        // The other tabs' labels are text on the strip.
+        foreach (string other in new[] { "Sent", "Settings" })
+            AssertContrast(StateView.TextColor(list, other), tokens.Surface, 4.5, $"{name}: {other} tab label on the strip");
     }
 
     [Theory]
