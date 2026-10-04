@@ -21,12 +21,21 @@ internal static class AutomationExposure
 
     /// <summary>
     /// Unnamed layout containers are not controls. UIA's Control view then skips them and shows their
-    /// children directly, instead of reading "pane" for every panel.
+    /// children directly, instead of reading "pane" for every panel. One that takes the keyboard is a
+    /// control, named or not, such as a scroll view that is a keyboard stop while it scrolls.
     /// </summary>
     public static bool IsLayoutOnly(UiElement element, UiSemanticNode node, string name) =>
         node.Role is UiSemanticRole.Generic or UiSemanticRole.Panel or UiSemanticRole.ScrollView
-        && !element.Focusable
+        && !IsKeyboardFocusable(element)
         && name.Length == 0;
+
+    /// <summary>
+    /// Whether the element takes keyboard focus: <see cref="UiElement.CanFocus"/>, which a
+    /// <c>StandardScrollView</c> with <c>FocusWhenScrollable</c> reports while <see cref="UiElement.Focusable"/>
+    /// stays false (Broiler.UI ADR 0028), or it has the focus, which an application can give an element
+    /// by its own policy. An element with the focus is never reported as one that cannot take it.
+    /// </summary>
+    public static bool IsKeyboardFocusable(UiElement element) => element.CanFocus || element.IsFocused;
 
     /// <summary>
     /// The UIA name. Broiler.UI already resolves it: an explicit <see cref="UiElement.AccessibleName"/>,

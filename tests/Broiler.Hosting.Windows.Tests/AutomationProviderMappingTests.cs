@@ -40,6 +40,46 @@ public sealed class AutomationProviderMappingTests
     }
 
     [Fact]
+    public void AScrollViewThatTakesTheKeyboardIsAFocusableControlWithOrWithoutAName()
+    {
+        var (session, bridge, root) = Create();
+        var stop = new Broiler.UI.ScrollView.Standard.StandardScrollView { FocusWhenScrollable = true };
+        var plain = new Broiler.UI.ScrollView.Standard.StandardScrollView();
+        stop.AddChild(new Filler());
+        plain.AddChild(new Filler());
+        root.AddChild(stop);
+        root.AddChild(plain);
+        foreach (var scroll in new[] { stop, plain })
+        {
+            scroll.Measure(new BSize(300, 100));
+            scroll.Arrange(new BRect(0, 0, 300, 100));
+        }
+
+        // A keyboard stop while it scrolls: CanFocus, though not Focusable (Broiler.UI ADR 0028).
+        Assert.True(stop.CanFocus);
+        Assert.False(stop.Focusable);
+        var stopPeer = bridge.GetOrCreatePeer(stop);
+        Assert.Equal(true, stopPeer.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        Assert.Equal(true, stopPeer.GetPropertyValue(UiaNative.UiaIsControlElementPropertyId));
+
+        // Without the opt-in it is layout only...
+        var plainPeer = bridge.GetOrCreatePeer(plain);
+        Assert.Equal(false, plainPeer.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        Assert.Equal(false, plainPeer.GetPropertyValue(UiaNative.UiaIsControlElementPropertyId));
+        // ...until an application focuses it by its own policy: what has the focus can take it.
+        session.SetFocus(plain);
+        Assert.Equal(true, plainPeer.GetPropertyValue(UiaNative.UiaHasKeyboardFocusPropertyId));
+        Assert.Equal(true, plainPeer.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        Assert.Equal(true, plainPeer.GetPropertyValue(UiaNative.UiaIsControlElementPropertyId));
+    }
+
+    /// <summary>Content taller than a scroll viewport that takes no focus itself.</summary>
+    private sealed class Filler : UiElement
+    {
+        protected override BSize MeasureCore(BSize availableSize) => new(100, 1000);
+    }
+
+    [Fact]
     public void LabelledEditIsNamedByItsLabelWithTheTextAsValueAndThePlaceholderAsHelp()
     {
         var (_, bridge, root) = Create();

@@ -268,7 +268,7 @@ public sealed partial class WindowsElementAutomationPeer :
             UiaNative.UiaClassNamePropertyId => element.GetType().Name,
             UiaNative.UiaHelpTextPropertyId => AutomationExposure.HelpText(element, name),
             UiaNative.UiaIsEnabledPropertyId => semantic.State.HasFlag(UiSemanticState.Enabled),
-            UiaNative.UiaIsKeyboardFocusablePropertyId => element.CanFocus,
+            UiaNative.UiaIsKeyboardFocusablePropertyId => AutomationExposure.IsKeyboardFocusable(element),
             UiaNative.UiaHasKeyboardFocusPropertyId => _bridge.Session.FocusedElement == element,
             UiaNative.UiaIsOffscreenPropertyId => semantic.State.HasFlag(UiSemanticState.Offscreen) || VisibleBounds.IsEmpty,
             UiaNative.UiaIsPasswordPropertyId => element is UiEdit { IsPassword: true },
