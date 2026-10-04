@@ -176,6 +176,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _itemPeers.Clear();
         _tabPeers.Clear();
         _snapshots.Clear();
+        _structureChanges.Clear();
     }
 
     // Only wrappers that exist were ever handed out; a peer that never reached UIA has nothing to release.
@@ -278,7 +279,18 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private void OnSemanticChanged(object? sender, UiSemanticChangedEventArgs e)
     {
-        if (IsTornDown || !UiaNative.UiaClientsAreListening())
+        if (IsTornDown)
+            return;
+
+        // Structure changes also drop the peers of removed elements, so they are collected whether or
+        // not a client listens.
+        if (e.Change is UiSemanticChangeKind.StructureChanged or UiSemanticChangeKind.SubtreeChanged)
+        {
+            QueueStructureChange(e.Element ?? _root);
+            return;
+        }
+
+        if (!UiaNative.UiaClientsAreListening())
             return;
 
         switch (e.Change)
@@ -302,12 +314,64 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 && _elementPeers.TryGetValue(e.Element.SemanticId, out WindowsElementAutomationPeer? statePeer) && statePeer.IsAlive:
                 RaiseChanges(e.Element, statePeer);
                 break;
-
-            case UiSemanticChangeKind.StructureChanged or UiSemanticChangeKind.SubtreeChanged:
-                CleanDeadPeers();
-                UiaNative.UiaRaiseStructureChangedEvent(NativeProviderAdapter.For(this)!, StructureChangeType.ChildrenInvalidated, null, 0);
-                break;
         }
+    }
+
+    private readonly List<UiElement> _structureChanges = [];
+    private bool _structureFlushQueued;
+
+    /// <summary>Raised with the providers whose children a flush invalidated, for diagnostics and tests.</summary>
+    internal event Action<IReadOnlyList<IRawElementProviderSimple>>? StructureInvalidated;
+
+    // Broiler.UI raises StructureChanged once per changed parent after an input dispatch or a frame, but
+    // one per change for changes an application makes between them. The bridge collects them until the
+    // dispatcher next runs, which a host does before each frame, so a refresh that adds a hundred rows
+    // or fields is one event per container.
+    private void QueueStructureChange(UiElement element)
+    {
+        if (!_structureChanges.Contains(element))
+            _structureChanges.Add(element);
+        if (_structureFlushQueued)
+            return;
+
+        _structureFlushQueued = true;
+        _session.Dispatcher.Post(FlushStructureChanges);
+    }
+
+    /// <summary>
+    /// Drops the peers of what was removed, disconnecting them from UIA, and raises one
+    /// children-invalidated event on the peer of each changed parent. A parent no client has reached has
+    /// no peer and needs none, and one inside another changed parent is covered by it.
+    /// </summary>
+    private void FlushStructureChanges()
+    {
+        _structureFlushQueued = false;
+        UiElement[] changed = [.. _structureChanges];
+        _structureChanges.Clear();
+        if (IsTornDown || _session.IsDisposed || changed.Length == 0)
+            return;
+
+        CleanDeadPeers();
+
+        var targets = new List<UiElement>();
+        foreach (UiElement element in changed)
+        {
+            bool reached = ReferenceEquals(element, _root)
+                || (_elementPeers.TryGetValue(element.SemanticId, out WindowsElementAutomationPeer? peer) && peer.IsAlive);
+            if (reached && !targets.Contains(element))
+                targets.Add(element);
+        }
+        targets.RemoveAll(element => targets.Exists(other => !ReferenceEquals(other, element) && element.IsDescendantOf(other)));
+        if (targets.Count == 0)
+            return;
+
+        var providers = targets.ConvertAll<IRawElementProviderSimple>(element => ReferenceEquals(element, _root) ? this : _elementPeers[element.SemanticId]);
+        StructureInvalidated?.Invoke(providers);
+        if (!UiaNative.UiaClientsAreListening())
+            return;
+
+        foreach (IRawElementProviderSimple provider in providers)
+            UiaNative.UiaRaiseStructureChangedEvent(NativeProviderAdapter.For(provider)!, StructureChangeType.ChildrenInvalidated, null, 0);
     }
 
     // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
