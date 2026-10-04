@@ -507,7 +507,36 @@ public sealed class AutomationProviderMappingTests
         }
     }
 
+    [Fact]
+    public void TheWindowsPaneIsNoFormFieldAndAnswersWithoutDescribingTheTree()
+    {
+        var session = new StandardUiSessionBuilder().WithDispatcher(new ImmediateUiDispatcher()).Build(new Host());
+        var root = new FlaggedRoot();
+        root.Arrange(new BRect(0, 0, 800, 600));
+        session.AddRoot(root);
+        var bridge = new WindowsAutomationBridge(nint.Zero, session, root);
+        root.Described = 0;
+
+        // The pane hosts the content and is no field, whatever the root says of itself.
+        Assert.Equal(true, bridge.GetPropertyValue(AutomationInterop.IsDataValidForFormPropertyId));
+        Assert.Equal(false, bridge.GetPropertyValue(AutomationInterop.IsRequiredForFormPropertyId));
+        // Describing the root would describe every element below it, for each property read.
+        Assert.Equal(0, root.Described);
+    }
+
     private static UiSemanticNode Flagged(UiSemanticNode node) => node with { State = node.State | UiSemanticState.Invalid | UiSemanticState.Required };
+
+    /// <summary>A root that describes itself as invalid and required, and counts how often it is described.</summary>
+    private sealed class FlaggedRoot : UiElement
+    {
+        public int Described;
+
+        protected override UiSemanticNode GetSemanticNodeCore()
+        {
+            Described++;
+            return Flagged(base.GetSemanticNodeCore());
+        }
+    }
 
     /// <summary>Describes one row as invalid and required, as a presenter may.</summary>
     private sealed class FlaggingPresenter(string flaggedId) : IUiListItemPresenter
