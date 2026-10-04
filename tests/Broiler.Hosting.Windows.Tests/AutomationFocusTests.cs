@@ -243,6 +243,24 @@ public sealed class AutomationFocusTests
         Assert.Equal([bravo], listPeer.GetSelection()!);
     }
 
+    [Fact]
+    public void RowsInsertedAboveTheSelectionRaiseNoSelectionOrFocusEvent()
+    {
+        var (session, bridge, root) = Create();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        root.AddChild(list);
+        list.SelectItem("b");
+        session.SetFocus(list);
+        bridge.GetOrCreatePeer(list);
+        var raised = Listen(bridge);
+
+        // New mail arrives above the selected message: its index changes, the selection does not.
+        list.SetItems([new UiListItem("new", "Newest"), new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        Assert.Equal(2, list.SelectedIndex);
+        Assert.DoesNotContain(raised, e => e.EventId is UiaNative.UiaSelectionItem_ElementSelectedEventId or UiaNative.UiaAutomationFocusChangedEventId);
+    }
+
     private static ISelectionItemProvider SelectionItem(WindowsElementAutomationPeer peer) =>
         Assert.IsAssignableFrom<ISelectionItemProvider>(peer.GetPatternProvider(UiaNative.UiaSelectionItemPatternId));
 

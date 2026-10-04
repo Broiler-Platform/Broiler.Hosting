@@ -223,6 +223,15 @@ public sealed class AutomationGeometryTests
             BPoint center = new(node.Bounds.Left + 5, node.Bounds.Top + (node.Bounds.Height / 2));
             Assert.Same(bridge.GetOrCreateItemPeer(list, index), bridge.ElementProviderFromPoint(center.X, center.Y));
         }
+
+        // Below the last row of a short list the point is on no row, so it is the list's.
+        var shortList = new StandardListView { ItemPresenter = new MailRowPresenter() };
+        shortList.SetItems(Enumerable.Range(0, 3).Select(i => new UiListItem($"s{i}", $"Short {i}")));
+        root.AddChild(shortList);
+        Layout(shortList, new BRect(400, 20, 300, 200));
+        UiSemanticNode lastRow = shortList.GetItemSemanticNode(2)!;
+        Assert.True(lastRow.Bounds.Bottom + 10 < shortList.ContentBounds.Bottom);
+        Assert.Same(bridge.GetOrCreatePeer(shortList), bridge.ElementProviderFromPoint(410, lastRow.Bounds.Bottom + 10));
     }
 
     private static (double, double, double, double) Rect(BRect rect) => (rect.X, rect.Y, rect.Width, rect.Height);
