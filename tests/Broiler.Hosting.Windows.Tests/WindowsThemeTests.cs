@@ -9,15 +9,33 @@ namespace Broiler.Hosting.Windows.Tests;
 
 public sealed class WindowsThemeTests
 {
-    // The Windows 11 contrast themes, as synthetic fixtures: Window, WindowText, Highlight, HighlightText,
-    // ButtonFace, ButtonText, GrayText, HotLight.
+    // The Windows 11 contrast themes: Window, WindowText, Highlight, HighlightText, ButtonFace, ButtonText,
+    // GrayText, HotLight, as the [Control Panel\Colors] sections of the theme files Windows 11 ships in
+    // %SystemRoot%\Resources\Ease of Access Themes give them (hcblack.theme is Aquatic, hcwhite.theme Desert,
+    // hc1.theme Dusk, hc2.theme Night sky).
     public static TheoryData<string, uint[], bool> ContrastThemes => new()
     {
         { "Aquatic", [0x202020, 0xFFFFFF, 0x8EE3F0, 0x263B50, 0x202020, 0xFFFFFF, 0xA6A6A6, 0x75E9FC], true },
         { "Desert", [0xFFFAEF, 0x3D3D3D, 0x903909, 0xFFF5E3, 0xFFFAEF, 0x202020, 0x676767, 0x1C5E75], false },
-        { "Dusk", [0x2D3236, 0xB6F6F0, 0xA1BFDE, 0x212D3B, 0x2D3236, 0xB6F6F0, 0xA6A6A6, 0x70EBDE], true },
-        { "Night sky", [0x000000, 0xFFFFFF, 0xD6B4FD, 0x2B2B2B, 0x000000, 0xFFFFFF, 0xA6A6A6, 0x8080FF], true },
+        { "Dusk", [0x2D3236, 0xFFFFFF, 0xA1BFDE, 0x212D3B, 0x2D3236, 0xB6F6F0, 0xA6A6A6, 0x70EBDE], true },
+        { "Night sky", [0x000000, 0xFFFFFF, 0xD6B4FD, 0x2B2B2B, 0x000000, 0xFFEE32, 0xA6A6A6, 0x8080FF], true },
     };
+
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    public void The_Named_Contrast_Themes_Are_The_Windows_Tables(string name, uint[] rgb, bool dark)
+    {
+        var named = name switch
+        {
+            "Aquatic" => WindowsSystemColors.Aquatic,
+            "Desert" => WindowsSystemColors.Desert,
+            "Dusk" => WindowsSystemColors.Dusk,
+            "Night sky" => WindowsSystemColors.NightSky,
+            _ => throw new ArgumentOutOfRangeException(nameof(name), name, null),
+        };
+        Assert.Equal(Colors(rgb), named);
+        Assert.Equal(dark, WindowsTheme.CreateHighContrastTheme(named).IsDark);
+    }
 
     [Theory]
     [InlineData(null, 1.0)]
