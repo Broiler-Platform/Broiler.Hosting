@@ -380,7 +380,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     // Broiler.UI raises StructureChanged once per changed parent after an input dispatch or a frame, but
     // one per change for changes an application makes between them. The bridge collects them until the
     // dispatcher next runs, which a host does before each frame, so a refresh that adds a hundred rows
-    // or fields is one event per container.
+    // or fields is one event per container. An ImmediateUiDispatcher runs the flush inside Post, so
+    // there each change is flushed on its own.
     private void QueueStructureChange(UiElement element)
     {
         if (!_structureChanges.Contains(element))
