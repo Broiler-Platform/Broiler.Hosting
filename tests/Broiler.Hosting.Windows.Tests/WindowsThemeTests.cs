@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using Broiler.Graphics.Color;
 using Broiler.Hosting.Windows;
 using Broiler.UI;
 using Broiler.UI.Standard;
+using Microsoft.Win32;
 using Xunit;
 
 namespace Broiler.Hosting.Windows.Tests;
@@ -25,16 +28,25 @@ public sealed class WindowsThemeTests
     [MemberData(nameof(ContrastThemes))]
     public void The_Named_Contrast_Themes_Are_The_Windows_Tables(string name, uint[] rgb, bool dark)
     {
-        var named = name switch
-        {
-            "Aquatic" => WindowsSystemColors.Aquatic,
-            "Desert" => WindowsSystemColors.Desert,
-            "Dusk" => WindowsSystemColors.Dusk,
-            "Night sky" => WindowsSystemColors.NightSky,
-            _ => throw new ArgumentOutOfRangeException(nameof(name), name, null),
-        };
+        var named = Named(name);
         Assert.Equal(Colors(rgb), named);
         Assert.Equal(dark, WindowsTheme.CreateHighContrastTheme(named).IsDark);
+    }
+
+    [Theory]
+    [InlineData("hcblack", "Aquatic")]
+    [InlineData("hcwhite", "Desert")]
+    [InlineData("hc1", "Dusk")]
+    [InlineData("hc2", "Night sky")]
+    public void The_Named_Contrast_Themes_Match_The_Theme_Files_Windows_Ships(string file, string name)
+    {
+        // Only Windows 11 ships these themes; Windows 10 and Windows Server use the same file names for others.
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Resources", "Ease of Access Themes", file + ".theme");
+        if (!IsWindows11Client() || !File.Exists(path))
+            return;
+
+        var colors = ReadThemeColors(path);
+        Assert.Equal(colors, Named(name));
     }
 
     [Theory]
@@ -230,6 +242,52 @@ public sealed class WindowsThemeTests
     {
         Assert.False(WindowsTitleBar.ApplyDarkMode(0, true));
         Assert.False(WindowsTitleBar.ApplyDarkMode(0x1234, true));
+    }
+
+    private static WindowsSystemColors Named(string name) => name switch
+    {
+        "Aquatic" => WindowsSystemColors.Aquatic,
+        "Desert" => WindowsSystemColors.Desert,
+        "Dusk" => WindowsSystemColors.Dusk,
+        "Night sky" => WindowsSystemColors.NightSky,
+        _ => throw new ArgumentOutOfRangeException(nameof(name), name, null),
+    };
+
+    private static bool IsWindows11Client()
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+            return false;
+        using var version = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+        return version?.GetValue("InstallationType") as string == "Client";
+    }
+
+    /// <summary>Reads the system colors of a .theme file's [Control Panel\Colors] section ("R G B" values).</summary>
+    private static WindowsSystemColors ReadThemeColors(string path)
+    {
+        // Only the colors read here are parsed: Windows' own hc2.theme has "MenuText=255 255 255e".
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bool inColors = false;
+        foreach (string raw in File.ReadLines(path))
+        {
+            string line = raw.Trim();
+            if (line.StartsWith('['))
+            {
+                inColors = string.Equals(line, @"[Control Panel\Colors]", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+            int equals = line.IndexOf('=');
+            if (inColors && equals > 0)
+                values[line[..equals]] = line[(equals + 1)..];
+        }
+
+        BColor Read(string key)
+        {
+            string[] rgb = values[key].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(3, rgb.Length);
+            return new(byte.Parse(rgb[0]), byte.Parse(rgb[1]), byte.Parse(rgb[2]), 255);
+        }
+        return new(Read("Window"), Read("WindowText"), Read("Hilight"), Read("HilightText"),
+            Read("ButtonFace"), Read("ButtonText"), Read("GrayText"), Read("HotTrackingColor"));
     }
 
     private static WindowsSystemColors Colors(uint[] rgb)
