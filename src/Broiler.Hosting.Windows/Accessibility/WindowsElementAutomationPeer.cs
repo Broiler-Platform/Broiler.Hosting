@@ -218,7 +218,7 @@ public sealed partial class WindowsElementAutomationPeer :
                     && !ItemName(lv, item, index).Contains(secondary, StringComparison.Ordinal) ? secondary : string.Empty,
                 UiaNative.UiaAutomationIdPropertyId => $"item_{item.Id}",
                 UiaNative.UiaIsEnabledPropertyId => lv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
-                UiaNative.UiaIsKeyboardFocusablePropertyId => true,
+                UiaNative.UiaIsKeyboardFocusablePropertyId => CanHoldFocus(lv, string.Equals(lv.SelectedItemId, item.Id, StringComparison.Ordinal)),
                 UiaNative.UiaHasKeyboardFocusPropertyId => lv.SelectedIndex == index && _bridge.Session.FocusedElement == lv,
                 UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
@@ -240,7 +240,7 @@ public sealed partial class WindowsElementAutomationPeer :
                 UiaNative.UiaNamePropertyId => tab.Header,
                 UiaNative.UiaAutomationIdPropertyId => $"tab_{tab.Id}",
                 UiaNative.UiaIsEnabledPropertyId => tv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
-                UiaNative.UiaIsKeyboardFocusablePropertyId => true,
+                UiaNative.UiaIsKeyboardFocusablePropertyId => CanHoldFocus(tv, tv.SelectedIndex == index),
                 UiaNative.UiaHasKeyboardFocusPropertyId => tv.SelectedIndex == index && _bridge.Session.FocusedElement == tv,
                 UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
@@ -284,6 +284,16 @@ public sealed partial class WindowsElementAutomationPeer :
             _ => null,
         };
     }
+
+    /// <summary>
+    /// Whether keyboard focus can be on a row, tab or tree row. Broiler.UI lists, tab views and trees keep
+    /// no focus apart from their selection (a tree, its focused node), so the focus can be on that one
+    /// item only, and only while its container can take the focus. Reporting the other items focusable
+    /// would invite a client that moves the focus with its cursor, such as Narrator, to call SetFocus on
+    /// them and see the focus land on another item.
+    /// </summary>
+    private static bool CanHoldFocus(UiElement container, bool isCurrentItem) =>
+        isCurrentItem && AutomationExposure.IsKeyboardFocusable(container);
 
     // The peers of the related elements a client can go to, in order, or none.
     private IRawElementProviderSimple[]? Related(UiElement element, params UiElement?[] related)
@@ -383,9 +393,10 @@ public sealed partial class WindowsElementAutomationPeer :
     /// <summary>
     /// Moves keyboard focus here without changing the selection. A list row, tab or tree row has no
     /// focus of its own in Broiler.UI, so its container takes the focus; the focused item stays the
-    /// selected one. Selecting is <see cref="Select"/>'s job, which UIA clients call after SetFocus: a
-    /// focus call that also selected would run the application's selection handler first and then take
-    /// the focus back from wherever that handler put it.
+    /// selected one (a tree's focused node), which is why only that item reports IsKeyboardFocusable.
+    /// Selecting is <see cref="Select"/>'s job, which UIA clients call after SetFocus: a focus call that
+    /// also selected would run the application's selection handler first and then take the focus back
+    /// from wherever that handler put it.
     /// </summary>
     public void SetFocus()
     {
@@ -689,6 +700,13 @@ public sealed partial class WindowsElementAutomationPeer :
     /// returns to the reader when the Inbox tab is chosen) stands, as it does for the pointer. A tree
     /// row is selected without moving the focus, which is what a click on it does.
     /// </summary>
+    /// <remarks>
+    /// This departs from Win32 and WinUI, whose list and tab item providers select without moving the
+    /// keyboard focus, and whose list items can hold the focus unselected. Broiler.UI has no focused but
+    /// unselected row or tab, and the pointer's order (focus, then select) is the one applications
+    /// already handle; selecting without the focus would leave a focused field inside tab content that
+    /// the new selection hides.
+    /// </remarks>
     public void Select()
     {
         if (!IsAlive) return;

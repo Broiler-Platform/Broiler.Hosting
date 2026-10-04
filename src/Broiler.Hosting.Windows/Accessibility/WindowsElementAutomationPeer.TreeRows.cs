@@ -101,7 +101,7 @@ public sealed partial class WindowsElementAutomationPeer
             UiaNative.UiaNamePropertyId => RowName(tree, index),
             UiaNative.UiaAutomationIdPropertyId => $"node_{node.Value}",
             UiaNative.UiaIsEnabledPropertyId => tree.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
-            UiaNative.UiaIsKeyboardFocusablePropertyId => true,
+            UiaNative.UiaIsKeyboardFocusablePropertyId => CanHoldFocus(tree, tree.FocusedNode == node),
             UiaNative.UiaHasKeyboardFocusPropertyId => tree.FocusedNode == node && _bridge.Session.FocusedElement == tree,
             UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
             UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,

@@ -12,6 +12,8 @@ using Broiler.UI.ListView.Standard;
 using Broiler.UI.Panel.Standard;
 using Broiler.UI.Standard;
 using Broiler.UI.TabView.Standard;
+using Broiler.UI.TreeView;
+using Broiler.UI.TreeView.Standard;
 using Xunit;
 
 namespace Broiler.Hosting.Windows.Tests;
@@ -33,13 +35,61 @@ public sealed class AutomationFocusTests
         root.AddChild(tabs);
         root.AddChild(elsewhere);
         session.SetFocus(elsewhere);
+        var inbox = bridge.GetOrCreateTabPeer(tabs, 0);
+        var compose = bridge.GetOrCreateTabPeer(tabs, 1);
+        // Only the tab the focus can be on says it takes the focus: the selected one.
+        Assert.Equal(true, inbox.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        Assert.Equal(false, compose.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
 
-        bridge.GetOrCreateTabPeer(tabs, 1).SetFocus();
+        compose.SetFocus();
 
         Assert.Same(tabs, session.FocusedElement);
         Assert.Equal("inbox", tabs.SelectedTab?.Id);
         // The focused item of a tab view is its selected tab.
-        Assert.Same(bridge.GetOrCreateTabPeer(tabs, 0), bridge.GetFocus());
+        Assert.Same(inbox, bridge.GetFocus());
+        Assert.Equal(true, inbox.GetPropertyValue(UiaNative.UiaHasKeyboardFocusPropertyId));
+        Assert.Equal(false, compose.GetPropertyValue(UiaNative.UiaHasKeyboardFocusPropertyId));
+    }
+
+    [Fact]
+    public void OnlyTheItemTheFocusCanBeOnIsKeyboardFocusable()
+    {
+        var (_, bridge, root) = Create();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        var fixedList = new StandardListView { Focusable = false };
+        fixedList.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        var tree = new StandardTreeView { DataSource = new Folders() };
+        root.AddChild(list);
+        root.AddChild(fixedList);
+        root.AddChild(tree);
+
+        // Nothing selected: the list itself takes the focus, and no row can.
+        Assert.Equal(false, bridge.GetOrCreateItemPeer(list, 0).GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        list.SelectIndex(1);
+        Assert.Equal(false, bridge.GetOrCreateItemPeer(list, 0).GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        Assert.Equal(true, bridge.GetOrCreateItemPeer(list, 1).GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+
+        // A list that takes no focus has no row that can, selected or not.
+        fixedList.SelectIndex(0);
+        Assert.False(fixedList.CanFocus);
+        Assert.Equal(false, bridge.GetOrCreateItemPeer(fixedList, 0).GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+
+        // In a tree it is the focused row.
+        tree.MoveFocusToFirst();
+        var rows = Assert.IsType<WindowsElementAutomationPeer>(bridge.GetOrCreatePeer(tree).Navigate(NavigateDirection.FirstChild));
+        var next = Assert.IsType<WindowsElementAutomationPeer>(rows.Navigate(NavigateDirection.NextSibling));
+        Assert.Equal(true, rows.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+        Assert.Equal(false, next.GetPropertyValue(UiaNative.UiaIsKeyboardFocusablePropertyId));
+    }
+
+    private sealed class Folders : ITreeDataSource
+    {
+        public TreeNodeId Root => new("root");
+        public int GetChildCount(TreeNodeId node) => node.Value == "root" ? 2 : 0;
+        public TreeNodeId GetChild(TreeNodeId node, int index) => new(index == 0 ? "inbox" : "archive");
+        public bool CanExpand(TreeNodeId node) => false;
+        public TreeNodePresentation GetPresentation(TreeNodeId node) => new(node, node.Value);
     }
 
     [Fact]
