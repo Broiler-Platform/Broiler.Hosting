@@ -211,6 +211,41 @@ public sealed class AutomationFocusTests
         Assert.DoesNotContain(raised, e => e.EventId == UiaNative.UiaSelectionItem_ElementSelectedEventId);
     }
 
+    [Fact]
+    public void AddingToAMultipleSelectionListKeepsTheOtherRowsAndTheFocus()
+    {
+        var (session, bridge, root) = Create();
+        var list = new StandardListView { SelectionMode = UiListSelectionMode.Multiple };
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo"), new UiListItem("c", "Charlie")]);
+        var elsewhere = new StandardButton { Text = "Elsewhere" };
+        root.AddChild(list);
+        root.AddChild(elsewhere);
+        list.SelectIndex(0);
+        session.SetFocus(elsewhere);
+        var listPeer = bridge.GetOrCreatePeer(list);
+        var alpha = bridge.GetOrCreateItemPeer(list, 0);
+        var bravo = bridge.GetOrCreateItemPeer(list, 1);
+        Assert.True(listPeer.CanSelectMultiple);
+
+        SelectionItem(bravo).AddToSelection();
+        Assert.Equal(["a", "b"], list.SelectedItemIds);
+        Assert.Same(elsewhere, session.FocusedElement);
+        Assert.True(SelectionItem(alpha).IsSelected);
+        Assert.True(SelectionItem(bravo).IsSelected);
+        Assert.Equal([alpha, bravo], listPeer.GetSelection()!);
+
+        // Adding a row that is already selected changes nothing; removing one leaves the rest.
+        SelectionItem(bravo).AddToSelection();
+        Assert.Equal(["a", "b"], list.SelectedItemIds);
+        SelectionItem(alpha).RemoveFromSelection();
+        Assert.Equal(["b"], list.SelectedItemIds);
+        Assert.False(SelectionItem(alpha).IsSelected);
+        Assert.Equal([bravo], listPeer.GetSelection()!);
+    }
+
+    private static ISelectionItemProvider SelectionItem(WindowsElementAutomationPeer peer) =>
+        Assert.IsAssignableFrom<ISelectionItemProvider>(peer.GetPatternProvider(UiaNative.UiaSelectionItemPatternId));
+
     private static void Select(WindowsElementAutomationPeer peer) =>
         Assert.IsAssignableFrom<ISelectionItemProvider>(peer.GetPatternProvider(UiaNative.UiaSelectionItemPatternId)).Select();
 

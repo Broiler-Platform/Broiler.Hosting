@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Broiler.Graphics.Geometry;
 using Broiler.UI;
 using Broiler.UI.Button;
@@ -669,7 +670,7 @@ public sealed partial class WindowsElementAutomationPeer :
             if (IsItem)
             {
                 UiListView? lv = ListView;
-                return lv is not null && lv.SelectedItemId == _itemId;
+                return lv is not null && lv.IsSelected(_itemId!);
             }
             if (IsTab)
             {
@@ -749,9 +750,17 @@ public sealed partial class WindowsElementAutomationPeer :
         }
     }
 
+    /// <summary>
+    /// Adds this item to the selection. In a list that selects several rows the row joins the others and
+    /// the focus stays where it is; where only one can be selected this is <see cref="Select"/>.
+    /// </summary>
     public void AddToSelection()
     {
         if (IsAlive && IsTreeItem) ChangeTreeSelection(add: true);
+        else if (IsAlive && IsItem && ListView is { SelectionMode: UiListSelectionMode.Multiple } lv)
+        {
+            if (!lv.IsSelected(_itemId!)) lv.ToggleItem(_itemId!);
+        }
         else Select();
     }
 
@@ -775,9 +784,10 @@ public sealed partial class WindowsElementAutomationPeer :
     {
         if (!IsAlive) return null;
         UiElement? el = Element;
-        if (el is UiListView lv && lv.SelectedItemId is { } itemId && lv.IndexOf(itemId) >= 0)
+        if (el is UiListView lv)
         {
-            return [_bridge.ItemPeer(lv, itemId)];
+            // Every selected row, in item order; the list keeps no row that is gone selected.
+            return lv.SelectedItemIds.Count > 0 ? [.. lv.SelectedItemIds.Select(itemId => (IRawElementProviderSimple)_bridge.ItemPeer(lv, itemId))] : null;
         }
         if (el is UiTabView tv && tv.SelectedTab is { } tab)
         {
