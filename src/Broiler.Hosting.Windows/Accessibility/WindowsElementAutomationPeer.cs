@@ -208,15 +208,14 @@ public sealed partial class WindowsElementAutomationPeer :
             int index = ItemIndex;
             if (lv is null || index < 0) return null;
             UiListItem item = lv.Items[index];
-            string itemName = ItemName(lv, item, index);
 
             return propertyId switch
             {
                 UiaNative.UiaControlTypePropertyId => UiaNative.UiaListItemControlTypeId,
-
-                UiaNative.UiaNamePropertyId => itemName,
+                UiaNative.UiaNamePropertyId => ItemName(lv, item, index),
                 // Not repeated when the presenter's name already says it.
-                UiaNative.UiaHelpTextPropertyId => item.SecondaryText is { Length: > 0 } secondary && !itemName.Contains(secondary, StringComparison.Ordinal) ? secondary : string.Empty,
+                UiaNative.UiaHelpTextPropertyId => item.SecondaryText is { Length: > 0 } secondary
+                    && !ItemName(lv, item, index).Contains(secondary, StringComparison.Ordinal) ? secondary : string.Empty,
                 UiaNative.UiaAutomationIdPropertyId => $"item_{item.Id}",
                 UiaNative.UiaIsEnabledPropertyId => lv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
                 UiaNative.UiaIsKeyboardFocusablePropertyId => true,
@@ -238,7 +237,6 @@ public sealed partial class WindowsElementAutomationPeer :
             return propertyId switch
             {
                 UiaNative.UiaControlTypePropertyId => UiaNative.UiaTabItemControlTypeId,
-
                 UiaNative.UiaNamePropertyId => tab.Header,
                 UiaNative.UiaAutomationIdPropertyId => $"tab_{tab.Id}",
                 UiaNative.UiaIsEnabledPropertyId => tv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
@@ -328,9 +326,9 @@ public sealed partial class WindowsElementAutomationPeer :
 
     /// <summary>
     /// What can be seen, in DIPs: the element's <see cref="UiElement.GetVisibleBounds"/>, an item's node
-    /// from <see cref="UiListView.GetItemSemanticNode"/> (already cut to the list's content area), or a
-    /// tab's header, each clipped to the window's surface. Empty when it is hidden or scrolled or
-    /// clipped entirely out of view, which is also when it reports IsOffscreen.
+    /// from <see cref="UiListView.GetItemSemanticNode"/> (already cut to the list's content area), a
+    /// tab's header or a tree row in view, each clipped to the window's surface. Empty when it is
+    /// hidden or scrolled or clipped entirely out of view, which is also when it reports IsOffscreen.
     /// </summary>
     internal BRect VisibleBounds
     {
