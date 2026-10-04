@@ -212,6 +212,70 @@ public sealed class AutomationFocusTests
     }
 
     [Fact]
+    public void SelectAnnouncesTheNewRowOrTabSelectedAndThenFocusedAndNeverTheOldOne()
+    {
+        var (session, bridge, root) = Create();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo"), new UiListItem("c", "Charlie")]);
+        var tabs = new StandardTabView();
+        tabs.AddTab("inbox", "Inbox");
+        tabs.AddTab("compose", "Compose");
+        var elsewhere = new StandardButton { Text = "Elsewhere" };
+        root.AddChild(list);
+        root.AddChild(tabs);
+        root.AddChild(elsewhere);
+        list.SelectIndex(0);
+        session.SetFocus(elsewhere);
+        var raised = Listen(bridge);
+
+        // As when the reader has the focus and a client picks the next message: focusing the list first, as
+        // a click does, must not announce the message selected before.
+        Select(bridge.GetOrCreateItemPeer(list, 1));
+        Assert.Equal(["Bravo selected", "Bravo focused"], FocusAndSelection(raised));
+
+        // In the focused list, and from there to a tab.
+        raised.Clear();
+        Select(bridge.GetOrCreateItemPeer(list, 2));
+        Select(bridge.GetOrCreateTabPeer(tabs, 1));
+        Assert.Equal(["Charlie selected", "Charlie focused", "Compose selected", "Compose focused"], FocusAndSelection(raised));
+
+        // Selecting the selected row from elsewhere only moves the focus, to it.
+        session.SetFocus(elsewhere);
+        raised.Clear();
+        Select(bridge.GetOrCreateItemPeer(list, 2));
+        Assert.Equal(["Charlie focused"], FocusAndSelection(raised));
+    }
+
+    [Fact]
+    public void SelectAnnouncesTheFocusOnceWhereTheSelectionHandlerPutsIt()
+    {
+        var (session, bridge, root) = Create();
+        var reply = new StandardButton { Text = "Reply" };
+        var body = new StandardEdit();
+        var tabs = new StandardTabView();
+        tabs.AddTab("inbox", "Inbox", reply);
+        tabs.AddTab("compose", "Compose", body);
+        root.AddChild(tabs);
+        tabs.SelectTab("compose");
+        session.SetFocus(body);
+        // As Broiler.Mail does: choosing the Inbox tab returns to the reader.
+        tabs.SelectionChanged += (_, _) => session.SetFocus(tabs.SelectedTab?.Id == "inbox" ? reply : tabs);
+        var raised = Listen(bridge);
+
+        Select(bridge.GetOrCreateTabPeer(tabs, 0));
+
+        Assert.Same(reply, session.FocusedElement);
+        Assert.Equal(["Inbox selected", "Reply focused"], FocusAndSelection(raised));
+    }
+
+    // The focus and selection events raised, in order, by the name of their target.
+    private static string[] FocusAndSelection(List<(IRawElementProviderSimple Target, int EventId)> raised) =>
+    [
+        .. raised.Where(e => e.EventId is UiaNative.UiaSelectionItem_ElementSelectedEventId or UiaNative.UiaAutomationFocusChangedEventId)
+            .Select(e => $"{e.Target.GetPropertyValue(UiaNative.UiaNamePropertyId)} {(e.EventId == UiaNative.UiaAutomationFocusChangedEventId ? "focused" : "selected")}"),
+    ];
+
+    [Fact]
     public void AddingToAMultipleSelectionListKeepsTheOtherRowsAndTheFocus()
     {
         var (session, bridge, root) = Create();

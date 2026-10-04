@@ -340,12 +340,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         switch (e.Change)
         {
-            // The event names what now has the focus, as GetFocus does: the selected row of a focused list
-            // rather than the list, and the root when focus went nowhere, never the element that lost it.
             case UiSemanticChangeKind.FocusChanged:
-                IRawElementProviderSimple focusedProvider = FocusTarget();
-                RaiseEvent(focusedProvider, UiaNative.UiaAutomationFocusChangedEventId);
-                RaisePropertyChanged(focusedProvider, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
+                if (_focusHoldDepth > 0) _focusMovedWhileHeld = true;
+                else RaiseFocusChanged();
                 break;
 
             case UiSemanticChangeKind.StatusAnnounced:
@@ -361,6 +358,45 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 && _elementPeers.TryGetValue(e.Element.SemanticId, out WindowsElementAutomationPeer? statePeer) && statePeer.IsAlive:
                 RaiseChanges(e.Element, statePeer);
                 break;
+        }
+    }
+
+    // The event names what now has the focus, as GetFocus does: the selected row of a focused list
+    // rather than the list, and the root when focus went nowhere, never the element that lost it.
+    private void RaiseFocusChanged()
+    {
+        IRawElementProviderSimple focused = FocusTarget();
+        RaiseEvent(focused, UiaNative.UiaAutomationFocusChangedEventId);
+        RaisePropertyChanged(focused, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
+    }
+
+    private int _focusHoldDepth;
+    private bool _focusMovedWhileHeld;
+
+    /// <summary>
+    /// Runs <paramref name="selection"/>, a selection a UIA client asked for, with focus events held, and
+    /// then raises one focus event for wherever the focus is. Selecting focuses the list or tab view
+    /// first, as a click does, and the focus event for that would name the row or tab selected before:
+    /// a screen reader would read the old message ahead of the new one. Clients hear ElementSelected on
+    /// the new row, and then the focus on it, or on whatever the application's selection handler focused.
+    /// </summary>
+    /// <remarks>
+    /// Only Select itself is covered. A client that calls SetFocus on the row before Select, as the
+    /// managed System.Windows.Automation client does, has been told of the selected row by then, because
+    /// SetFocus does not select; the COM client's Select calls Select alone.
+    /// </remarks>
+    internal void HoldFocusEvents(Action selection)
+    {
+        _focusHoldDepth++;
+        try { selection(); }
+        finally
+        {
+            if (--_focusHoldDepth == 0 && _focusMovedWhileHeld)
+            {
+                _focusMovedWhileHeld = false;
+                if (!IsTornDown && ClientsListening())
+                    RaiseFocusChanged();
+            }
         }
     }
 
@@ -504,6 +540,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private void RaiseChanges(UiElement element, WindowsElementAutomationPeer peer)
     {
         List<AutomationChange> changes = DetectChanges(element, peer);
+        // The focus moving with the selection is raised once the hold ends, after ElementSelected.
+        if (_focusHoldDepth > 0 && changes.RemoveAll(change => !change.IsProperty && change.Id == UiaNative.UiaAutomationFocusChangedEventId) > 0)
+            _focusMovedWhileHeld = true;
         if (changes.Count > 0) ChangesRaised?.Invoke(changes);
         foreach (AutomationChange change in changes)
         {
