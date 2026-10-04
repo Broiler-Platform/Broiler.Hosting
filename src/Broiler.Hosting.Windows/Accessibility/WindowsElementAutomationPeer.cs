@@ -303,8 +303,10 @@ public sealed partial class WindowsElementAutomationPeer :
         isCurrentItem && AutomationExposure.IsKeyboardFocusable(container);
 
     // A row, tab or tree row answers IsDataValidForForm and IsRequiredForForm from the state of the node
-    // its container describes it with: valid and not required unless that node says otherwise. UIA reads
-    // a property left unanswered as false, so a client would hear every row and tab called invalid.
+    // its container describes it with: valid and not required unless that node says otherwise. UIA reports
+    // IsDataValidForForm left unanswered as false, so clients read every row and tab as not valid. Both are
+    // read when asked and raise no change event: nothing in Broiler.UI marks a row or tab invalid or
+    // required, and watching them would describe every row a client holds on each change of its list.
     private static UiSemanticState ItemState(UiListView listView, int index) =>
         listView.GetItemSemanticNode(index)?.State ?? UiSemanticState.None;
 
@@ -727,7 +729,8 @@ public sealed partial class WindowsElementAutomationPeer :
     /// ElementSelected comes from change detection on the container, once, as for a click; a row that is
     /// already selected raises none. Focus events are held meanwhile (<see cref="WindowsAutomationBridge.HoldFocusEvents"/>):
     /// clients hear ElementSelected on the new row and then one FocusChanged, for the new row or for
-    /// whatever the application focused, never one for the row selected before.
+    /// whatever the application focused (none if it put the focus back where it was), never one for the
+    /// row selected before.
     /// This departs from Win32 and WinUI, whose list and tab item providers select without moving the
     /// keyboard focus, and whose list items can hold the focus unselected. Broiler.UI has no focused but
     /// unselected row or tab, and the pointer's order (focus, then select) is the one applications

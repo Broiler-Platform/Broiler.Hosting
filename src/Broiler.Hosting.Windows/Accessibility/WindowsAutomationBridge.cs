@@ -383,9 +383,11 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     /// nothing when the focus ends where it started, since the moves between were never announced.
     /// </summary>
     /// <remarks>
-    /// Only Select itself is covered. A client that calls SetFocus on the row before Select, as the
-    /// managed System.Windows.Automation client does, has been told of the selected row by then, because
-    /// SetFocus does not select; the COM client's Select calls Select alone.
+    /// Only Select itself is covered, which is all a COM client's Select calls. For a UIA2 client's Select
+    /// (System.Windows.Automation and the tools built on it), UIAutomationCore first calls SetFocus on the
+    /// row, and SetFocus does not select, so that client has been told of the row selected before by then.
+    /// The two calls arrive on their own, with the dispatcher running between them, so the bridge cannot
+    /// tell from the SetFocus that a Select follows.
     /// </remarks>
     internal void HoldFocusEvents(Action selection)
     {
