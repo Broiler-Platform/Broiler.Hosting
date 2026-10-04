@@ -135,12 +135,14 @@ public sealed class WindowsThemeTests
         AssertContrast(tokens.SelectionText, tokens.AccentSoft, 4.5, $"{name}: selected text on the selection");
         AssertContrast(tokens.SelectionTextMuted, tokens.AccentSoft, 4.5, $"{name}: selected muted text on the selection");
         AssertContrast(tokens.OnAccent, tokens.Accent, 4.5, $"{name}: text on the accent");
-        // A hovered, pressed, or checked control. The pairs the controls draw are checked in
+        // A control state drawn on the state fill. The pairs the controls draw are checked in
         // Control_States_Are_Drawn_In_The_Highlight_Pair.
         AssertContrast(tokens.StateText, tokens.StateFill, 4.5, $"{name}: state text on the state fill");
-        // Non-text: 3:1 (WCAG 1.4.11) for the focus ring and control borders.
+        // Non-text: 3:1 (WCAG 1.4.11) for the focus ring, control borders, and the accent fill of a progress
+        // bar or slider on its track.
         AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
         AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
+        AssertContrast(tokens.Accent, tokens.SurfaceDisabled, 3, $"{name}: accent fill on the track");
     }
 
     [Theory]
@@ -152,8 +154,10 @@ public sealed class WindowsThemeTests
         var colors = Colors(rgb);
         var tokens = WindowsTheme.CreateHighContrastTheme(colors);
         Assert.Equal(dark, tokens.IsDark);
-        // Windows draws a hovered, pressed, or checked control in the highlight pair. Each state is checked as
-        // the control draws it, not only as the palette names it.
+        // Windows draws a hovered, pressed, or checked control in the highlight pair. These are the states
+        // Broiler.UI draws on the state fill, each checked as the control draws it, not only as the palette
+        // names it. The states it draws elsewhere are checked in
+        // Pressed_Buttons_And_A_Hovered_Unchecked_Toggle_Look_As_At_Rest.
         (BColor Fill, BColor Text) highlight = (colors.Highlight, colors.HighlightText);
 
         var button = new StandardButton { Text = "Reply" };
@@ -201,6 +205,55 @@ public sealed class WindowsThemeTests
             BRenderList list = view.Render();
             BColor fill = Assert.Single(list.Commands.OfType<BRenderCommand.FillRoundedRect>(), command => command.Rect == toolbar.OverflowButtonBounds).Color;
             AssertDrawnReadable(highlight, (fill, StateView.TextColor(list, "»")), $"{name}: open toolbar overflow button");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    public void Pressed_Buttons_And_A_Hovered_Unchecked_Toggle_Look_As_At_Rest(string name, uint[] rgb, bool dark)
+    {
+        // The known gap in CreateHighContrastTheme's remarks: Broiler.UI draws these states on SurfaceDisabled
+        // or SurfaceAlt, both the window color here, not on the state fill, so they read but give no feedback.
+        // Once Broiler.UI draws them in the state pair, move them to
+        // Control_States_Are_Drawn_In_The_Highlight_Pair and drop the gap from the remarks and the README.
+        var colors = Colors(rgb);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors);
+        Assert.Equal(dark, tokens.IsDark);
+
+        var button = new StandardButton { Text = "Reply" };
+        button.ApplyTheme(tokens);
+        using (var view = new StateView(button, new BRect(10, 10, 80, 30)))
+        {
+            var rest = view.Look(button, "Reply");
+            Assert.Equal((colors.Window, colors.WindowText), rest);
+            view.Move(button.Bounds);
+            view.Press(button.Bounds);
+            Assert.True(button.IsPressed);
+            AssertDrawnReadable(rest, view.Look(button, "Reply"), $"{name}: pressed secondary button");
+        }
+
+        var toggle = new StandardToggleButton { Text = "Flag" };
+        toggle.ApplyTheme(tokens);
+        using (var view = new StateView(toggle, new BRect(10, 10, 80, 30)))
+        {
+            var rest = view.Look(toggle, "Flag");
+            Assert.Equal((colors.Window, colors.Highlight), rest);
+            view.Move(toggle.Bounds);
+            AssertDrawnReadable(rest, view.Look(toggle, "Flag"), $"{name}: hovered unchecked toggle button");
+        }
+
+        var spin = new StandardSpinBox { Minimum = 0, Maximum = 100, Value = 5 };
+        spin.ApplyTheme(tokens);
+        using (var view = new StateView(spin, new BRect(10, 10, 120, 32)))
+        {
+            BRect up = spin.UpArrowBounds;
+            view.Move(up);
+            view.Press(up);
+            BRenderList list = view.Render();
+            BColor fill = Assert.Single(list.Commands.OfType<BRenderCommand.FillRect>(), command => command.Rect == up).Color;
+            // The up arrow is drawn first, in the color it has at rest.
+            BColor arrow = list.Commands.OfType<BRenderCommand.FillTriangle>().First().Color;
+            AssertDrawnReadable((colors.Window, colors.WindowText), (fill, arrow), $"{name}: pressed spin box arrow");
         }
     }
 
