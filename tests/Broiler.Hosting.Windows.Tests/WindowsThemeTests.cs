@@ -35,6 +35,17 @@ public sealed class WindowsThemeTests
         { "Night sky", [0x000000, 0xFFFFFF, 0xD6B4FD, 0x2B2B2B, 0x000000, 0xFFEE32, 0xA6A6A6, 0x8080FF], true },
     };
 
+    // Custom contrast themes a user could choose, whose highlight is chosen as a fill for the highlight text and need
+    // not read as text on the window: one that still stands out as a focus ring (4.2:1), one that blends in (1.5:1),
+    // and two that read at 4.5:1 and differ only in the highlight text, white or the window text.
+    public static TheoryData<string, uint[], bool> CustomContrastThemes => new()
+    {
+        { "Custom, highlight at 4.2:1", [0xFFFFFF, 0x000000, 0x3A7BD5, 0x000000, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE], false },
+        { "Custom, highlight at 1.5:1", [0x000000, 0xFFFFFF, 0x0000A0, 0xFFFFFF, 0x000000, 0xFFFFFF, 0xA6A6A6, 0x8080FF], true },
+        { "Custom, highlight at 4.5:1", [0xFFFFFF, 0x000000, 0x767676, 0xFFFFFF, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE], false },
+        { "Custom, highlight at 4.5:1 under the window text", [0xFFFFFF, 0x000000, 0x767676, 0x000000, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE], false },
+    };
+
     [Theory]
     [MemberData(nameof(ContrastThemes))]
     public void The_Named_Contrast_Themes_Are_The_Windows_Tables(string name, uint[] rgb, bool dark)
@@ -150,10 +161,7 @@ public sealed class WindowsThemeTests
 
     [Theory]
     [MemberData(nameof(ContrastThemes))]
-    // Custom contrast themes whose highlight is a fill that does not read as text on the window: one that still
-    // stands out as a focus ring (4.2:1), and one that blends in (1.5:1).
-    [InlineData("Custom, highlight at 4.2:1", new uint[] { 0xFFFFFF, 0x000000, 0x3A7BD5, 0x000000, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE }, false)]
-    [InlineData("Custom, highlight at 1.5:1", new uint[] { 0x000000, 0xFFFFFF, 0x0000A0, 0xFFFFFF, 0x000000, 0xFFFFFF, 0xA6A6A6, 0x8080FF }, true)]
+    [MemberData(nameof(CustomContrastThemes))]
     public void Accent_Text_Reads_On_The_Tab_Strip_As_The_Tab_View_Draws_It(string name, uint[] rgb, bool dark)
     {
         var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
@@ -252,6 +260,7 @@ public sealed class WindowsThemeTests
 
     [Theory]
     [MemberData(nameof(ContrastThemes))]
+    [MemberData(nameof(CustomContrastThemes))]
     public void Pressed_Buttons_And_A_Hovered_Unchecked_Toggle_Look_As_At_Rest(string name, uint[] rgb, bool dark)
     {
         // The known gap in CreateHighContrastTheme's remarks: Broiler.UI draws these states on SurfaceDisabled
@@ -278,8 +287,9 @@ public sealed class WindowsThemeTests
         toggle.ApplyTheme(tokens);
         using (var view = new StateView(toggle, new BRect(10, 10, 80, 30)))
         {
+            // A themed toggle button's label is accent text, here on the window color at rest and when hovered.
             var rest = view.Look(toggle, "Flag");
-            Assert.Equal((colors.Window, colors.Highlight), rest);
+            Assert.Equal((colors.Window, tokens.AccentText), rest);
             view.Move(toggle.Bounds);
             AssertDrawnReadable(rest, view.Look(toggle, "Flag"), $"{name}: hovered unchecked toggle button");
         }
@@ -357,6 +367,20 @@ public sealed class WindowsThemeTests
         Assert.Equal(colors.WindowText, tokens.AccentText);
         Assert.Equal(colors.Highlight, tokens.FocusRing);
         Assert.Equal(new[] { colors.Highlight, colors.Highlight, colors.Highlight }, new[] { tokens.Accent, tokens.AccentSoft, tokens.StateFill });
+
+        // At 4.5:1 it reads, and stays the accent text.
+        var readable = Colors([0xFFFFFF, 0x000000, 0x767676, 0xFFFFFF, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE]);
+        Assert.InRange(WindowsTheme.ContrastRatio(readable.Highlight, readable.Window), 4.5, 4.6);
+        Assert.Equal(readable.Highlight, WindowsTheme.CreateHighContrastTheme(readable).AccentText);
+    }
+
+    [Fact]
+    public void The_Accent_Text_Is_Kept_In_A_Copy_That_Recolors_The_Accent()
+    {
+        var colors = WindowsSystemColors.Aquatic;
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors) with { Accent = BColor.FromArgb(0xFF, 0x0B, 0x6F, 0xD8) };
+
+        Assert.Equal(colors.Highlight, tokens.AccentText);
     }
 
     [Theory]
