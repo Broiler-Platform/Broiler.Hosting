@@ -101,15 +101,24 @@ public sealed class WindowsElementAutomationPeer :
     /// </summary>
     internal int RuntimeIdValue { get; }
 
+    /// <summary>
+    /// Whether the peer still stands for something on screen: its element is attached to the bridge's
+    /// session (not disposed, not removed from the tree), its item or tab still exists, and the bridge
+    /// and its window are still there. Native callers get UIA_E_ELEMENTNOTAVAILABLE otherwise.
+    /// </summary>
     public bool IsAlive
     {
         get
         {
-            if (IsItem) return ListView is { IsDisposed: false } && ItemIndex >= 0;
-            if (IsTab) return TabView is { IsDisposed: false } && TabIndex >= 0;
-            return Element is { IsDisposed: false };
+            if (_bridge.IsTornDown) return false;
+            if (IsItem) return ListView is { } lv && IsAttached(lv) && ItemIndex >= 0;
+            if (IsTab) return TabView is { } tv && IsAttached(tv) && TabIndex >= 0;
+            return Element is { } el && IsAttached(el);
         }
     }
+
+    // A removed element that is not disposed yet is gone as well: it has no parent to report.
+    private bool IsAttached(UiElement element) => !element.IsDisposed && element.Session == _bridge.Session;
 
     internal static int IndexOfTab(UiTabView tabView, string tabId)
     {
@@ -246,7 +255,7 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaLocalizedControlTypePropertyId => semantic.Role.ToString(),
             // No type-name fallback: an unnamed element has an empty name, not its class name.
             UiaNative.UiaNamePropertyId => name,
-            UiaNative.UiaLabeledByPropertyId => element.LabeledBy is { IsDisposed: false } label && AutomationExposure.IsExposed(label) ? _bridge.GetOrCreatePeer(label) : null,
+            UiaNative.UiaLabeledByPropertyId => element.LabeledBy is { } label && IsAttached(label) && AutomationExposure.IsExposed(label) ? _bridge.GetOrCreatePeer(label) : null,
             UiaNative.UiaIsControlElementPropertyId => !AutomationExposure.IsLayoutOnly(element, semantic, name),
             UiaNative.UiaIsContentElementPropertyId => !AutomationExposure.IsLayoutOnly(element, semantic, name),
             UiaNative.UiaAutomationIdPropertyId => element.SemanticId.ToString(),

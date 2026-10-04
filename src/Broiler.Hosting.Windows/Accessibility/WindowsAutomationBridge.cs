@@ -43,17 +43,34 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private readonly int _rootRuntimeId;
     private int _lastRuntimeId;
 
-    private bool _isDisposed;
+    private volatile bool _isDisposed;
+    private volatile bool _windowDestroyed;
+    private bool _isSubclassed;
+    private bool _providersReleased;
     private readonly int _uiThread = Environment.CurrentManagedThreadId;
+
+    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
+    private const int WindowPollMilliseconds = 25;
+
+    /// <summary>
+    /// True once the bridge is disposed or its window has been destroyed. Every provider call then fails
+    /// with UIA_E_ELEMENTNOTAVAILABLE instead of reading state that is being torn down.
+    /// </summary>
+    internal bool IsTornDown => _isDisposed || _windowDestroyed;
+
+    // A window that is gone drains nothing more, so a call posted to it would only wait for the timeout.
+    private bool CanReachUiThread => !IsTornDown && (_hwnd == nint.Zero || HwndNative.IsWindow(_hwnd));
 
     internal T OnUiThread<T>(Func<T> operation)
     {
         T Run()
         {
-            if (_isDisposed) throw new System.Runtime.InteropServices.COMException("Element is no longer available.", unchecked((int)0x80040201));
+            if (IsTornDown) throw AutomationInterop.ElementNotAvailableException();
             return operation();
         }
         if (Environment.CurrentManagedThreadId == _uiThread) return Run();
+        if (!CanReachUiThread) throw AutomationInterop.ElementNotAvailableException();
+
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         int started = 0;
         _session.Dispatcher.Post(() =>
@@ -62,7 +79,18 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             try { completion.TrySetResult(Run()); }
             catch (Exception error) { completion.TrySetException(error); }
         });
-        try { return completion.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); }
+        try
+        {
+            // The wait is sliced so that a window destroyed meanwhile ends it at once.
+            long deadline = Environment.TickCount64 + (long)CallTimeout.TotalMilliseconds;
+            WaitHandle pending = ((IAsyncResult)completion.Task).AsyncWaitHandle;
+            while (!pending.WaitOne(WindowPollMilliseconds))
+            {
+                if (!CanReachUiThread) throw AutomationInterop.ElementNotAvailableException();
+                if (Environment.TickCount64 >= deadline) throw new TimeoutException("The UI thread did not answer the automation call in time.");
+            }
+            return completion.Task.GetAwaiter().GetResult();
+        }
         finally { Interlocked.CompareExchange(ref started, 2, 0); }
     }
 
@@ -80,7 +108,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             _subclassId = ++_subclassCounter;
             _subclassProc = SubclassWindowProc;
-            WindowNative.SetWindowSubclass(_hwnd, _subclassProc, _subclassId, 0);
+            _isSubclassed = WindowNative.SetWindowSubclass(_hwnd, _subclassProc, _subclassId, 0);
         }
         else
         {
@@ -96,21 +124,74 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     public Func<double> ScaleProvider => _scaleProvider;
 
+    /// <summary>Raised when a provider's native wrapper is disconnected from UIA, for diagnostics and tests.</summary>
+    internal event Action<IRawElementProviderSimple>? ProviderDisconnected;
+
     private nint SubclassWindowProc(nint hWnd, uint uMsg, nint wParam, nint lParam, nuint uIdSubclass, nuint dwRefData)
     {
-        if (uMsg == UiaNative.WmGetObject && ((int)lParam == UiaNative.UiaRootObjectId || unchecked((uint)(long)lParam) == 0xFFFFFFE7))
+        if (uMsg == UiaNative.WmGetObject && !IsTornDown && ((int)lParam == UiaNative.UiaRootObjectId || unchecked((uint)(long)lParam) == 0xFFFFFFE7))
         {
             return UiaNative.UiaReturnRawElementProvider(hWnd, wParam, lParam, NativeProviderAdapter.For(this)!);
         }
 
+        if (uMsg == WindowNative.WmDestroy)
+        {
+            // Calls still arriving fail as not available, and UIA lets go of what it holds for the window.
+            _windowDestroyed = true;
+            ReleaseProviders();
+        }
+        else if (uMsg == WindowNative.WmNcdestroy)
+        {
+            // A subclass must be gone before the window is; DefSubclassProc still completes this call.
+            RemoveSubclass();
+        }
+
         return WindowNative.DefSubclassProc(hWnd, uMsg, wParam, lParam);
+    }
+
+    private void RemoveSubclass()
+    {
+        if (!_isSubclassed || _subclassProc is null) return;
+        _isSubclassed = false;
+        WindowNative.RemoveWindowSubclass(_hwnd, _subclassProc, _subclassId);
+    }
+
+    /// <summary>
+    /// Disconnects every provider wrapper this bridge handed to UIA and, for a window, tells UIA to
+    /// release the providers it obtained for it (UiaReturnRawElementProvider with no provider).
+    /// </summary>
+    private void ReleaseProviders()
+    {
+        if (_providersReleased) return;
+        _providersReleased = true;
+
+        Disconnect(this);
+        foreach (WindowsElementAutomationPeer peer in _elementPeers.Values) Disconnect(peer);
+        foreach (WindowsElementAutomationPeer peer in _itemPeers.Values) Disconnect(peer);
+        foreach (WindowsElementAutomationPeer peer in _tabPeers.Values) Disconnect(peer);
+        if (_hwnd != nint.Zero)
+            AutomationInterop.UiaReleaseWindowProviders(_hwnd);
+
+        _elementPeers.Clear();
+        _itemPeers.Clear();
+        _tabPeers.Clear();
+        _snapshots.Clear();
+    }
+
+    // Only wrappers that exist were ever handed out; a peer that never reached UIA has nothing to release.
+    private void Disconnect(IRawElementProviderSimple provider)
+    {
+        if (NativeProviderAdapter.Existing(provider) is not { } adapter) return;
+        AutomationInterop.UiaDisconnectProvider(adapter);
+        ProviderDisconnected?.Invoke(provider);
     }
 
     public WindowsElementAutomationPeer GetOrCreatePeer(UiElement element)
     {
         ArgumentNullException.ThrowIfNull(element);
 
-        if (_elementPeers.TryGetValue(element.SemanticId, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
+        // A semantic ID names one element for good, so an existing peer is that element's, alive or not.
+        if (_elementPeers.TryGetValue(element.SemanticId, out WindowsElementAutomationPeer? existing))
             return existing;
 
         var peer = new WindowsElementAutomationPeer(this, element);
@@ -141,7 +222,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     internal WindowsElementAutomationPeer ItemPeer(UiListView listView, string itemId)
     {
         var key = (listView.SemanticId, itemId);
-        if (_itemPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
+        if (_itemPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
         var peer = new WindowsElementAutomationPeer(this, listView, itemId);
@@ -152,7 +233,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     internal WindowsElementAutomationPeer TabPeer(UiTabView tabView, string tabId)
     {
         var key = (tabView.SemanticId, tabId);
-        if (_tabPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
+        if (_tabPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
         var peer = new WindowsElementAutomationPeer(this, tabView, tabId);
@@ -191,7 +272,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private void OnSemanticChanged(object? sender, UiSemanticChangedEventArgs e)
     {
-        if (!UiaNative.UiaClientsAreListening())
+        if (IsTornDown || !UiaNative.UiaClientsAreListening())
             return;
 
         switch (e.Change)
@@ -320,32 +401,30 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         UiaNative.UiaRaiseAutomationPropertyChangedEvent(NativeProviderAdapter.For(provider)!, propertyId, AutomationVariant.From(oldVar), AutomationVariant.From(newVar));
     }
 
-    private void CleanDeadPeers()
+    /// <summary>Drops the peers of elements, items and tabs that are gone, and disconnects their wrappers from UIA.</summary>
+    internal void CleanDeadPeers()
     {
-        var deadElementKeys = new List<long>();
-        foreach ((long key, WindowsElementAutomationPeer peer) in _elementPeers)
-        {
-            if (!peer.IsAlive) deadElementKeys.Add(key);
-        }
-        foreach (long key in deadElementKeys)
-        {
-            _elementPeers.Remove(key);
-            _snapshots.Remove(key);
-        }
+        if (IsTornDown) return;
+        RemoveDeadPeers(_elementPeers, key => _snapshots.Remove(key));
+        RemoveDeadPeers(_itemPeers);
+        RemoveDeadPeers(_tabPeers);
+    }
 
-        var deadItemKeys = new List<(long, string)>();
-        foreach (((long, string) key, WindowsElementAutomationPeer peer) in _itemPeers)
+    private void RemoveDeadPeers<TKey>(Dictionary<TKey, WindowsElementAutomationPeer> peers, Action<TKey>? removed = null) where TKey : notnull
+    {
+        List<TKey>? dead = null;
+        foreach ((TKey key, WindowsElementAutomationPeer peer) in peers)
         {
-            if (!peer.IsAlive) deadItemKeys.Add(key);
+            if (!peer.IsAlive) (dead ??= []).Add(key);
         }
-        foreach (var key in deadItemKeys) _itemPeers.Remove(key);
+        if (dead is null) return;
 
-        var deadTabKeys = new List<(long, string)>();
-        foreach (((long, string) key, WindowsElementAutomationPeer peer) in _tabPeers)
+        foreach (TKey key in dead)
         {
-            if (!peer.IsAlive) deadTabKeys.Add(key);
+            Disconnect(peers[key]);
+            peers.Remove(key);
+            removed?.Invoke(key);
         }
-        foreach (var key in deadTabKeys) _tabPeers.Remove(key);
     }
 
     // --- IRawElementProviderSimple ---
@@ -520,15 +599,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _isDisposed = true;
 
         _session.SemanticChanged -= OnSemanticChanged;
-
-        if (_hwnd != nint.Zero && _subclassProc is not null)
-        {
-            WindowNative.RemoveWindowSubclass(_hwnd, _subclassProc, _subclassId);
-        }
-
-        _elementPeers.Clear();
-        _itemPeers.Clear();
-        _tabPeers.Clear();
-        _snapshots.Clear();
+        RemoveSubclass();
+        ReleaseProviders();
     }
 }
