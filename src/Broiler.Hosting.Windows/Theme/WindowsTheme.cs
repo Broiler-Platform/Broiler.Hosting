@@ -39,7 +39,9 @@ public static class WindowsTheme
     /// selected text, and the control states Broiler.UI draws on the state fill (listed in the remarks)
     /// are drawn in the highlight text color on the highlight color. The focus ring uses the highlight
     /// color only when it stands out from the window background (3:1), and falls back to the window text
-    /// color otherwise.
+    /// color otherwise. Text drawn in the accent (<c>AccentText</c>) is drawn on the window color, so it
+    /// uses the highlight color only when that reads there (4.5:1) and the highlight text is not the window
+    /// text, and the window text color otherwise.
     /// Status colors that Windows does not define keep the high-contrast preset values where they are
     /// readable on the window background (4.5:1), and fall back to the window text color otherwise;
     /// the link color does the same with the system hyperlink color. The palette is flagged as high
@@ -61,10 +63,27 @@ public static class WindowsTheme
     /// Known gaps: Broiler.UI draws a pressed secondary button and a pressed spin box arrow on
     /// <c>SurfaceDisabled</c>, and a hovered unchecked toggle button on <c>SurfaceAlt</c>, not on the state
     /// fill. Both are the window color here, as disabled and alternate surfaces need, so those states stay
-    /// readable but look like the control at rest. Broiler.UI also draws in <c>Accent</c>, here the
-    /// highlight color, directly on the window color: text (an unchecked toggle button's label, the selected
-    /// tab header) and the progress bar's and slider's fill on their track. That reads in the four Windows 11
-    /// themes, but not in a custom theme whose highlight color is close to its window color.
+    /// readable but look like the control at rest. Broiler.UI also draws in <c>Accent</c>, here the highlight
+    /// color, directly on the window color: text (the label of a toggle button that was never themed, the code
+    /// editor's keywords) and marks (a checked check box's fill and border, a checked radio button's dot, the
+    /// progress bar's and slider's fill on their track, the list's unread dot, a window's or dialog's active
+    /// border). That reads in the four Windows 11 themes, but not in a custom theme whose highlight color is
+    /// close to its window color. And while the highlight text is the window text, a format code view draws
+    /// selected codes other than inline codes in the link and status colors on the highlight color, where they
+    /// need not read.
+    /// </para>
+    /// <para>
+    /// <c>AccentText</c> colors the selected tab's label and the bar under it, an accent label, a themed toggle
+    /// button's label and icon at rest and hovered, and inline codes, all on the window color. In the four
+    /// Windows 11 themes it is the highlight color, which reads there at 6.8:1 (Dusk) to 11.8:1 (Night sky). A
+    /// custom theme's highlight color is chosen as a fill for its highlight text, so where it reads under 4.5:1
+    /// on the window color the text takes the window text color, and the bar still marks the selected tab. On
+    /// the highlight color, a checked, indeterminate, or pressed toggle button draws the state text, because the
+    /// accent is the state fill, and a format code view draws selected text and codes in the selection text,
+    /// except while that is the text color: then it draws each code in its own color, and selected inline codes
+    /// in the accent text on the highlight. In this palette that is when the highlight text is the window text,
+    /// so the accent text then takes the window text color too, which reads on the window and, as the highlight
+    /// text, on the highlight.
     /// </para>
     /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
@@ -90,6 +109,10 @@ public static class WindowsTheme
             AccentPressed = colors.Highlight,
             AccentSoft = colors.Highlight,
             OnAccent = colors.HighlightText,
+            // Accent text is drawn on the window color, where a highlight chosen as a fill need not read. While the
+            // highlight text is the window text, selected inline codes are drawn in it on the highlight as well, where
+            // only the window text reads.
+            AccentText = colors.HighlightText == colors.WindowText ? colors.WindowText : ReadableOnWindow(colors.Highlight, colors),
             // Windows pairs Highlight with HighlightText and has no muted variant of it.
             SelectionText = colors.HighlightText,
             SelectionTextMuted = colors.HighlightText,

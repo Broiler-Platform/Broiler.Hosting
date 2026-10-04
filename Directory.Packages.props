@@ -17,6 +17,7 @@
     <PackageVersion Include="Broiler.UI.Forms.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Label.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Edit.Standard" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.FormatCodeView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ListView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ListView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Panel.Standard" Version="$(BroilerUiVersion)" />
