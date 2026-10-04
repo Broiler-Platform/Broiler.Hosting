@@ -6,8 +6,8 @@ using Broiler.Native.Windows;
 using Broiler.Native.Windows.Accessibility;
 using Broiler.UI;
 using Broiler.UI.ListView;
+using Broiler.UI.ListView.Standard;
 using Broiler.UI.TabView;
-using Broiler.UI.TabView.Standard;
 
 namespace Broiler.Hosting.Windows.Accessibility;
 
@@ -270,6 +270,12 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             Math.Max(0, dipRect.Height * scale));
     }
 
+    /// <summary>
+    /// <paramref name="dipRect"/> cut to the window's surface, the root's bounds; empty when it lies
+    /// outside. Broiler.UI clips to scroll viewports and lists, but not to the host window.
+    /// </summary>
+    internal BRect ClipToSurface(BRect dipRect) => dipRect.IsEmpty ? BRect.Empty : dipRect.Intersect(_root.Bounds);
+
     private void OnSemanticChanged(object? sender, UiSemanticChangedEventArgs e)
     {
         if (IsTornDown || !UiaNative.UiaClientsAreListening())
@@ -528,36 +534,43 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             dipY = pt.Y / scale;
         }
 
-        UiElement? hit = HitTestElement(_root, new BPoint(dipX, dipY));
-        if (hit is null) return this;
+        var point = new BPoint(dipX, dipY);
+        // The session's own hit test: it respects overlays, such as an open drop-down drawn over the
+        // fields below it, and what containers clip, such as a field scrolled out under an action bar.
+        UiElement? hit = _session.HitTest(point);
+        while (hit is not null && !ReferenceEquals(hit, _root) && !AutomationExposure.IsExposed(hit))
+            hit = hit.Parent;
+        if (hit is null || ReferenceEquals(hit, _root)) return this;
 
-        if (hit is UiListView lv && lv.Items.Count > 0)
-        {
-            double relativeY = dipY - lv.Bounds.Top + lv.VerticalOffset;
-            double itemHeight = WindowsElementAutomationPeer.GetItemHeight(lv);
-            if (itemHeight > 0)
-            {
-                int itemIndex = (int)(relativeY / itemHeight);
-                if (itemIndex >= 0 && itemIndex < lv.Items.Count)
-                    return GetOrCreateItemPeer(lv, itemIndex);
-            }
-        }
-        else if (hit is UiTabView tv && tv.Tabs.Count > 0)
-        {
-            double headerHeight = (tv as StandardTabView)?.HeaderHeight ?? 32.0;
-            if (dipY >= tv.Bounds.Top && dipY <= tv.Bounds.Top + headerHeight)
-            {
-                double tabWidth = tv.Bounds.Width / Math.Max(1, tv.Tabs.Count);
-                if (tabWidth > 0)
-                {
-                    int tabIndex = (int)((dipX - tv.Bounds.Left) / tabWidth);
-                    if (tabIndex >= 0 && tabIndex < tv.Tabs.Count)
-                        return GetOrCreateTabPeer(tv, tabIndex);
-                }
-            }
-        }
-
+        if (hit is UiListView lv && ItemAt(lv, point) is { } item) return item;
+        if (hit is UiTabView tv && TabAt(tv, point) is { } tab) return tab;
         return GetOrCreatePeer(hit);
+    }
+
+    // The row under the point, by the same geometry the item peers report.
+    private WindowsElementAutomationPeer? ItemAt(UiListView list, BPoint point)
+    {
+        double rowHeight = WindowsElementAutomationPeer.GetItemHeight(list);
+        if (rowHeight <= 0 || list.Items.Count == 0) return null;
+        double top = list is StandardListView standard ? standard.ContentBounds.Top : list.Bounds.Top;
+        int guess = (int)Math.Floor((point.Y - top + list.VerticalOffset) / rowHeight);
+        for (int index = Math.Max(0, guess - 1); index <= Math.Min(list.Items.Count - 1, guess + 1); index++)
+        {
+            WindowsElementAutomationPeer peer = ItemPeer(list, list.Items[index].Id);
+            if (peer.VisibleBounds.Contains(point)) return peer;
+        }
+        return null;
+    }
+
+    // Only a header the view really draws can be hit; a view without header geometry answers for itself.
+    private WindowsElementAutomationPeer? TabAt(UiTabView tabs, BPoint point)
+    {
+        for (int index = 0; index < tabs.Tabs.Count && index < tabs.VisibleTabCapacity; index++)
+        {
+            if (!tabs.GetTabHeaderBounds(index).IsEmpty && WindowsElementAutomationPeer.TabBounds(tabs, index).Contains(point))
+                return TabPeer(tabs, tabs.Tabs[index].Id);
+        }
+        return null;
     }
 
     public IRawElementProviderFragment? GetFocus()
@@ -576,21 +589,6 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
 
         return GetOrCreatePeer(focused);
-    }
-
-    private static UiElement? HitTestElement(UiElement root, BPoint point)
-    {
-        if (!AutomationExposure.IsExposed(root) || !root.Bounds.Contains(point))
-            return null;
-
-        for (int i = root.Children.Count - 1; i >= 0; i--)
-        {
-            UiElement? childHit = HitTestElement(root.Children[i], point);
-            if (childHit is not null)
-                return childHit;
-        }
-
-        return root;
     }
 
     public void Dispose()

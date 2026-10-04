@@ -204,18 +204,20 @@ public sealed class WindowsElementAutomationPeer :
             int index = ItemIndex;
             if (lv is null || index < 0) return null;
             UiListItem item = lv.Items[index];
+            string itemName = ItemName(lv, item, index);
 
             return propertyId switch
             {
                 UiaNative.UiaControlTypePropertyId => UiaNative.UiaListItemControlTypeId,
                 UiaNative.UiaLocalizedControlTypePropertyId => "list item",
-                UiaNative.UiaNamePropertyId => !string.IsNullOrEmpty(item.Text) ? item.Text : item.Id,
-                UiaNative.UiaHelpTextPropertyId => item.SecondaryText ?? string.Empty,
+                UiaNative.UiaNamePropertyId => itemName,
+                // Not repeated when the presenter's name already says it.
+                UiaNative.UiaHelpTextPropertyId => item.SecondaryText is { Length: > 0 } secondary && !itemName.Contains(secondary, StringComparison.Ordinal) ? secondary : string.Empty,
                 UiaNative.UiaAutomationIdPropertyId => $"item_{item.Id}",
                 UiaNative.UiaIsEnabledPropertyId => lv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
                 UiaNative.UiaIsKeyboardFocusablePropertyId => true,
                 UiaNative.UiaHasKeyboardFocusPropertyId => lv.SelectedIndex == index && _bridge.Session.FocusedElement == lv,
-                UiaNative.UiaIsOffscreenPropertyId => IsItemOffscreen(lv, index),
+                UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
                 UiaNative.UiaItemStatusPropertyId => item.IsRead == false ? "Unread" : "Read",
                 _ => null,
@@ -238,7 +240,7 @@ public sealed class WindowsElementAutomationPeer :
                 UiaNative.UiaIsEnabledPropertyId => tv.GetSemanticNode().State.HasFlag(UiSemanticState.Enabled),
                 UiaNative.UiaIsKeyboardFocusablePropertyId => true,
                 UiaNative.UiaHasKeyboardFocusPropertyId => tv.SelectedIndex == index && _bridge.Session.FocusedElement == tv,
-                UiaNative.UiaIsOffscreenPropertyId => index >= tv.VisibleTabCapacity,
+                UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
                 _ => null,
             };
@@ -264,7 +266,7 @@ public sealed class WindowsElementAutomationPeer :
             UiaNative.UiaIsEnabledPropertyId => semantic.State.HasFlag(UiSemanticState.Enabled),
             UiaNative.UiaIsKeyboardFocusablePropertyId => element.CanFocus,
             UiaNative.UiaHasKeyboardFocusPropertyId => _bridge.Session.FocusedElement == element,
-            UiaNative.UiaIsOffscreenPropertyId => semantic.State.HasFlag(UiSemanticState.Offscreen) || !AutomationExposure.IsExposed(element),
+            UiaNative.UiaIsOffscreenPropertyId => semantic.State.HasFlag(UiSemanticState.Offscreen) || VisibleBounds.IsEmpty,
             UiaNative.UiaIsPasswordPropertyId => element is UiEdit { IsPassword: true },
             UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
             UiaNative.UiaLiveSettingPropertyId => StatusAnnouncements.LiveSettingFor(semantic) is var live and not LiveSetting.Off ? (int)live : null,
@@ -276,39 +278,64 @@ public sealed class WindowsElementAutomationPeer :
 
     public IRawElementProviderFragmentRoot? FragmentRoot => _bridge;
 
+    /// <summary>The visible part of the element, item or tab on screen; empty while none of it can be seen.</summary>
     public UiaRect BoundingRectangle
     {
         get
         {
             if (!IsAlive) return default;
+            BRect visible = VisibleBounds;
+            return visible.IsEmpty ? default : _bridge.GetScreenRect(visible);
+        }
+    }
 
+    /// <summary>
+    /// What can be seen, in DIPs: the element's <see cref="UiElement.GetVisibleBounds"/>, an item's node
+    /// from <see cref="UiListView.GetItemSemanticNode"/> (already cut to the list's content area), or a
+    /// tab's header, each clipped to the window's surface. Empty when it is hidden or scrolled or
+    /// clipped entirely out of view, which is also when it reports IsOffscreen.
+    /// </summary>
+    internal BRect VisibleBounds
+    {
+        get
+        {
             if (IsItem)
             {
-                UiListView? lv = ListView;
-                int index = ItemIndex;
-                if (lv is null || index < 0) return default;
-                double height = GetItemHeight(lv);
-                double top = lv.Bounds.Top - lv.VerticalOffset + (index * height);
-                var dipRect = new BRect(lv.Bounds.Left, top, lv.Bounds.Width, height);
-                return _bridge.GetScreenRect(dipRect);
+                return ListView is { } lv && ItemIndex is var index and >= 0 && lv.GetItemSemanticNode(index) is { } node
+                    && !node.State.HasFlag(UiSemanticState.Offscreen)
+                    ? _bridge.ClipToSurface(node.Bounds)
+                    : BRect.Empty;
             }
 
             if (IsTab)
             {
-                UiTabView? tv = TabView;
-                int index = TabIndex;
-                if (tv is null || index < 0) return default;
-                double headerHeight = (tv as StandardTabView)?.HeaderHeight ?? 32.0;
-                double tabWidth = tv.Bounds.Width / Math.Max(1, tv.Tabs.Count);
-                var dipRect = new BRect(tv.Bounds.Left + (index * tabWidth), tv.Bounds.Top, tabWidth, headerHeight);
-                return _bridge.GetScreenRect(dipRect);
+                return TabView is { } tv && TabIndex is var index and >= 0 && index < tv.VisibleTabCapacity
+                    ? _bridge.ClipToSurface(TabBounds(tv, index))
+                    : BRect.Empty;
             }
 
-            UiElement? el = Element;
-            if (el is null) return default;
-            return _bridge.GetScreenRect(el.Bounds);
+            return Element is { } element && AutomationExposure.IsExposed(element)
+                ? _bridge.ClipToSurface(element.GetVisibleBounds())
+                : BRect.Empty;
         }
     }
+
+    /// <summary>
+    /// A tab's header as the view draws and hit-tests it, cut to the view's visible bounds; a view that
+    /// reports no header geometry places its tabs on the whole view, as their semantic nodes do.
+    /// </summary>
+    internal static BRect TabBounds(UiTabView tabView, int index)
+    {
+        BRect visible = tabView.GetVisibleBounds();
+        BRect header = tabView.GetTabHeaderBounds(index);
+        return header.IsEmpty ? visible : header.Intersect(visible);
+    }
+
+    // The presenter's name (for a mail row, the sender, subject and full received date) as the list
+    // describes the item; the item's own text when the presenter gives none.
+    private static string ItemName(UiListView listView, UiListItem item, int index) =>
+        listView.GetItemSemanticNode(index)?.Name is { Length: > 0 } name ? name
+        : !string.IsNullOrEmpty(item.Text) ? item.Text : item.Id;
 
     // UIA prefixes the appended value with the hosting window's runtime ID.
     public int[]? GetRuntimeId() => IsAlive ? [AutomationInterop.AppendRuntimeId, RuntimeIdValue] : null;
@@ -767,13 +794,6 @@ public sealed class WindowsElementAutomationPeer :
         if (lv is StandardListView slv)
             return slv.EffectiveItemHeight;
         return lv.ItemPresenter?.GetItemHeight(null, lv.Density, lv.Bounds.Width) ?? 28.0;
-    }
-
-    private static bool IsItemOffscreen(UiListView lv, int index)
-    {
-        double height = GetItemHeight(lv);
-        double top = (index * height) - lv.VerticalOffset;
-        return top + height <= 0 || top >= lv.Bounds.Height;
     }
 
     private static int MapRoleToControlType(UiSemanticRole role) => role switch

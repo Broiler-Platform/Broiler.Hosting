@@ -21,6 +21,7 @@
     <PackageVersion Include="Broiler.UI.Panel.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.RichEdit" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.RichEdit.Standard" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TabView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TabView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsVersion)" />

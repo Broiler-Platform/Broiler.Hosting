@@ -47,9 +47,10 @@ internal sealed partial class NativeTextRange(WindowsTextRange range) : INativeT
 
     public nint GetBoundingRectangles() => Read(() =>
     {
-        // Without per-character geometry, a non-empty range is reported as the element's area.
-        if (Range.IsDegenerate) return AutomationMarshalling.Doubles([]);
+        // Without per-character geometry, a non-empty range is reported as the visible part of the
+        // element; a range in an element scrolled out of view has no rectangle at all.
         UiaRect bounds = Range.Owner.BoundingRectangle;
+        if (Range.IsDegenerate || bounds.Width <= 0 || bounds.Height <= 0) return AutomationMarshalling.Doubles([]);
         return AutomationMarshalling.Doubles([bounds.Left, bounds.Top, bounds.Width, bounds.Height]);
     });
 
