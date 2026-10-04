@@ -95,6 +95,8 @@ public sealed class WindowsThemeTests
         Assert.Equal(colors.Highlight, tokens.AccentSoft);
         Assert.Equal(colors.HighlightText, tokens.SelectionText);
         Assert.Equal(colors.HighlightText, tokens.SelectionTextMuted);
+        Assert.Equal(colors.Highlight, tokens.StateFill);
+        Assert.Equal(colors.HighlightText, tokens.StateText);
         Assert.True(tokens.IsHighContrast);
         Assert.True(tokens.ReducedMotion);
         Assert.True(WindowsTheme.ContrastRatio(tokens.Text, tokens.Surface) >= 4.5, $"{name}: text");
@@ -127,6 +129,21 @@ public sealed class WindowsThemeTests
         // Non-text: 3:1 (WCAG 1.4.11) for the focus ring and control borders.
         AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
         AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
+    }
+
+    [Fact]
+    public void The_States_Keep_The_Highlight_Pair_In_A_Copy_That_Recolors_The_Selection()
+    {
+        var colors = WindowsSystemColors.Aquatic;
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors) with
+        {
+            AccentSoft = colors.Window,
+            SelectionText = colors.WindowText,
+            SelectionTextMuted = colors.WindowText,
+        };
+
+        Assert.Equal(colors.Highlight, tokens.StateFill);
+        Assert.Equal(colors.HighlightText, tokens.StateText);
     }
 
     [Fact]

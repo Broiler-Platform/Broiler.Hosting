@@ -35,8 +35,9 @@ public static class WindowsTheme
 
     /// <summary>
     /// Builds a high-contrast palette from system colors. Text, borders, and surfaces use the window
-    /// colors; the accent and the selection use the highlight pair, so selected rows and selected text
-    /// are drawn in the highlight text color. The focus ring uses the highlight color only when it
+    /// colors; the accent, the selection, and control states use the highlight pair, so selected rows,
+    /// selected text, and a hovered, pressed, or checked control are drawn in the highlight text color
+    /// on the highlight color. The focus ring uses the highlight color only when it
     /// stands out from the window background (3:1), and falls back to the window text color otherwise.
     /// Status colors that Windows does not define keep the high-contrast preset values where they are
     /// readable on the window background (4.5:1), and fall back to the window text color otherwise;
@@ -48,10 +49,12 @@ public static class WindowsTheme
     /// contrast themes (<see cref="WindowsSystemColors.Aquatic"/> and the others), or any colors a user
     /// could choose, to build the palette that theme gives without changing the system's settings.
     /// <para>
-    /// Known gap: Broiler.UI also draws some control states on <c>AccentSoft</c>, which has to be the
-    /// highlight color for selections. A hovered secondary button (<c>Text</c> on it), a checked or pressed
-    /// toggle button (<c>Accent</c> on it), and a hovered spin box arrow (<c>TextMuted</c> on it) are
-    /// therefore not readable in this palette until Broiler.UI gives state fills a role of their own.
+    /// The state pair (<c>StateFill</c>, <c>StateText</c>) colors a hovered secondary button or spin box
+    /// arrow, a checked, indeterminate, or pressed toggle button, and the open toolbar overflow button. Windows
+    /// 11 contrast themes draw UI that is hovered, pressed, or selected in Highlight and HighlightText, and
+    /// keep ButtonFace and ButtonText for controls at rest, so the states take the highlight pair. ButtonFace
+    /// is the window color in all four of the themes Windows ships, so a state drawn on it would look like
+    /// the control at rest.
     /// </para>
     /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
@@ -80,6 +83,10 @@ public static class WindowsTheme
             // Windows pairs Highlight with HighlightText and has no muted variant of it.
             SelectionText = colors.HighlightText,
             SelectionTextMuted = colors.HighlightText,
+            // A hovered, pressed, or checked control is drawn as Windows draws one, in the highlight pair. Set,
+            // not left to follow the selection, so a copy that recolors the selection keeps it.
+            StateFill = colors.Highlight,
+            StateText = colors.HighlightText,
             FocusRing = focus,
             Success = ReadableOnWindow(preset.Success, colors),
             Warning = ReadableOnWindow(preset.Warning, colors),
