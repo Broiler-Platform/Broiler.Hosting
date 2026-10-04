@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Broiler.Documents.FormatCodes;
+using Broiler.Documents.Model;
 using Broiler.Graphics.Color;
 using Broiler.Graphics.Geometry;
 using Broiler.Graphics.RenderList;
@@ -10,6 +12,8 @@ using Broiler.Input;
 using Broiler.Input.Mouse;
 using Broiler.UI;
 using Broiler.UI.Button.Standard;
+using Broiler.UI.FormatCodeView.Standard;
+using Broiler.UI.Label.Standard;
 using Broiler.UI.SpinBox.Standard;
 using Broiler.UI.Standard;
 using Broiler.UI.TabView.Standard;
@@ -135,9 +139,11 @@ public sealed class WindowsThemeTests
         Assert.Equal(dark, tokens.IsDark);
 
         // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on. Accent text is the selected
-        // tab's label, an accent label and a toggle button's label at rest; the selected tab is checked as the tab
-        // view draws it in Accent_Text_Reads_On_The_Tab_Strip_As_The_Tab_View_Draws_It. The accent itself is text
-        // where a control was never themed and draws from the shared palette (a toggle button's label).
+        // tab's label, an accent label, a themed toggle button's label at rest and inline codes; they are checked as
+        // drawn in Accent_Text_Reads_On_The_Tab_Strip_As_The_Tab_View_Draws_It,
+        // Accent_Labels_And_Inline_Codes_Read_Where_They_Are_Drawn and
+        // Pressed_Buttons_And_A_Hovered_Unchecked_Toggle_Look_As_At_Rest. The accent itself is text in a toggle
+        // button that was never themed and draws from the shared palette, and in the code editor's keywords.
         foreach (var (role, color) in new[] { ("text", tokens.Text), ("muted text", tokens.TextMuted),
             ("success", tokens.Success), ("warning", tokens.Warning), ("danger", tokens.Danger), ("link", tokens.Info),
             ("accent text", tokens.AccentText), ("accent", tokens.Accent) })
@@ -193,6 +199,46 @@ public sealed class WindowsThemeTests
         // The other tabs' labels are text on the strip.
         foreach (string other in new[] { "Sent", "Settings" })
             AssertContrast(StateView.TextColor(list, other), tokens.Surface, 4.5, $"{name}: {other} tab label on the strip");
+    }
+
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    [MemberData(nameof(CustomContrastThemes))]
+    public void Accent_Labels_And_Inline_Codes_Read_Where_They_Are_Drawn(string name, uint[] rgb, bool dark)
+    {
+        var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
+        Assert.Equal(dark, tokens.IsDark);
+
+        // An accent label has no fill: it shows the surface it lies on.
+        var label = StandardLabel.Accent("Unread");
+        label.ApplyTheme(tokens);
+        using (var view = new StateView(label, new BRect(10, 10, 120, 24)))
+        {
+            BColor text = StateView.TextColor(view.Render(), "Unread");
+            Assert.Equal(tokens.AccentText, text);
+            AssertContrast(text, tokens.Surface, 4.5, $"{name}: accent label on the window");
+            AssertContrast(text, tokens.SurfaceAlt, 4.5, $"{name}: accent label on the alternate surface");
+        }
+
+        // An inline code is drawn on the format code view's pane, and when selected on the selection fill. While the
+        // selected text is the text color, the view draws each selected code in its own color there.
+        var codes = new StandardFormatCodeView
+        {
+            Projection = FormatCodeProjector.Project(RichTextDocument.FromParagraphs([RichTextParagraph.Create("x", new InlineStyle { Bold = true })])),
+        };
+        codes.ApplyTheme(tokens);
+        using (var view = new StateView(codes, new BRect(0, 0, 300, 100)))
+        {
+            BColor code = StateView.TextColor(view.Render(), "[Bold ON]");
+            Assert.Equal(tokens.AccentText, code);
+            AssertContrast(code, codes.Background, 4.5, $"{name}: inline code on the pane");
+
+            codes.SetSelection(0, codes.Text.Length);
+            BRenderList list = view.Render();
+            Assert.Contains(list.Commands.OfType<BRenderCommand.FillRect>(), command => command.Color == tokens.AccentSoft);
+            foreach (string run in new[] { "[Bold ON]", "x" })
+                AssertContrast(StateView.TextColor(list, run), tokens.AccentSoft, 4.5, $"{name}: selected {run} on the selection");
+        }
     }
 
     [Theory]
@@ -372,6 +418,20 @@ public sealed class WindowsThemeTests
         var readable = Colors([0xFFFFFF, 0x000000, 0x767676, 0xFFFFFF, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE]);
         Assert.InRange(WindowsTheme.ContrastRatio(readable.Highlight, readable.Window), 4.5, 4.6);
         Assert.Equal(readable.Highlight, WindowsTheme.CreateHighContrastTheme(readable).AccentText);
+    }
+
+    [Fact]
+    public void Accent_Text_Is_The_Window_Text_Where_The_Highlight_Text_Is()
+    {
+        // While the selected text is the text color, a format code view draws selected inline codes in the accent
+        // text on the highlight, where the highlight cannot read however well it reads on the window. The window
+        // text is the highlight text then, and reads on both.
+        var colors = Colors([0xFFFFFF, 0x000000, 0x767676, 0x000000, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE]);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors);
+        Assert.True(WindowsTheme.ContrastRatio(colors.Highlight, colors.Window) >= 4.5);
+        Assert.Equal(colors.WindowText, tokens.AccentText);
+        Assert.Equal(tokens.Text, tokens.SelectionText);
+        Assert.Equal(new[] { colors.Highlight, colors.Highlight, colors.Highlight }, new[] { tokens.Accent, tokens.AccentSoft, tokens.FocusRing });
     }
 
     [Fact]
