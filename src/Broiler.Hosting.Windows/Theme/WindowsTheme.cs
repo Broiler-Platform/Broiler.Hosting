@@ -47,6 +47,12 @@ public static class WindowsTheme
     /// <paramref name="colors"/> need not be the current system colors: pass one of the Windows 11
     /// contrast themes (<see cref="WindowsSystemColors.Aquatic"/> and the others), or any colors a user
     /// could choose, to build the palette that theme gives without changing the system's settings.
+    /// <para>
+    /// Known gap: Broiler.UI also draws some control states on <c>AccentSoft</c>, which has to be the
+    /// highlight color for selections. A hovered secondary button (<c>Text</c> on it), a checked or pressed
+    /// toggle button (<c>Accent</c> on it), and a hovered spin box arrow (<c>TextMuted</c> on it) are
+    /// therefore not readable in this palette until Broiler.UI gives state fills a role of their own.
+    /// </para>
     /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
     {
