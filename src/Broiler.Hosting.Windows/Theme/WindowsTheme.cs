@@ -56,6 +56,11 @@ public static class WindowsTheme
     /// is the window color in all four of the themes Windows ships, so a state drawn on it would look like
     /// the control at rest.
     /// </para>
+    /// <para>
+    /// Known gap: Broiler.UI draws some text in <c>Accent</c>, here the highlight color, directly on the
+    /// window background (an unchecked toggle button's label, the selected tab header). That reads in the
+    /// four Windows 11 themes, but not in a custom theme whose highlight color is close to its window color.
+    /// </para>
     /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
     {

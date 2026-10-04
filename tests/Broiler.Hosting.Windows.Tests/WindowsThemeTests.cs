@@ -122,9 +122,11 @@ public sealed class WindowsThemeTests
         var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
         Assert.Equal(dark, tokens.IsDark);
 
-        // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on.
+        // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on. The accent is text as well:
+        // an unchecked toggle button's label and the selected tab header.
         foreach (var (role, color) in new[] { ("text", tokens.Text), ("muted text", tokens.TextMuted),
-            ("success", tokens.Success), ("warning", tokens.Warning), ("danger", tokens.Danger), ("link", tokens.Info) })
+            ("success", tokens.Success), ("warning", tokens.Warning), ("danger", tokens.Danger), ("link", tokens.Info),
+            ("accent", tokens.Accent) })
         {
             AssertContrast(color, tokens.Surface, 4.5, $"{name}: {role} on the window");
             AssertContrast(color, tokens.SurfaceAlt, 4.5, $"{name}: {role} on the alternate surface");
