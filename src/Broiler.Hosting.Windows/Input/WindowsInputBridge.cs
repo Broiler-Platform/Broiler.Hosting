@@ -197,8 +197,13 @@ public sealed class WindowsInputBridge : IDisposable
                 _deadKeyActive = true;
                 break;
 
-            case WindowNative.WmChar:
+            // A key pressed with Alt (Alt+F, Alt+Space) is a menu key, not text: it goes on to DefWindowProc,
+            // which opens the window menu for Alt+Space. AltGr (Ctrl+Alt) and Alt+numpad codes arrive as
+            // WM_CHAR, so no text is lost.
             case WindowNative.WmSysChar:
+                break;
+
+            case WindowNative.WmChar:
             case WindowNative.WmUniChar:
                 char character = (char)wParam;
                 ProcessChar(character);

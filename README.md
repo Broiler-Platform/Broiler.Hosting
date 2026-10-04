@@ -14,7 +14,7 @@ Provides Windows desktop hosting facilities:
   - Top-level window activation focus handoff (`WM_SETFOCUS` and `WM_ACTIVATE` transferring Win32 focus to the render child HWND).
   - Exactly-once text delivery across `WM_CHAR` and IMM32 IME compositions (`WM_IME_STARTCOMPOSITION`, `WM_IME_COMPOSITION`, synthetic `WM_CHAR` suppression after commit).
   - Surrogate pair assembly (`\uD83D\uDE00`) and stray surrogate cleanup.
-  - Shortcut modifier isolation (`Ctrl+C`, `Ctrl+A`, `Ctrl+V`, `Ctrl+Z`, `Ctrl+Backspace`, `Ctrl+Enter` suppressed from text generation) with full `AltGr` support.
+  - Shortcut modifier isolation (`Ctrl+C`, `Ctrl+A`, `Ctrl+V`, `Ctrl+Z`, `Ctrl+Backspace`, `Ctrl+Enter` suppressed from text generation) with full `AltGr` and Alt+numpad support. Alt chords (`WM_SYSCHAR`, such as `Alt+F`) are never typed; they go on to `DefWindowProc`, so `Alt+Space` opens the window menu.
   - Sub-notch precision mouse wheel and horizontal tilt wheel handling (`WM_MOUSEWHEEL`, `WM_MOUSEHWHEEL`).
   - Decoupled application-level input filtering hook (`Func<UiInputEvent, bool>?`).
 - **`WindowsAutomationBridge` & `WindowsElementAutomationPeer`**: Native Windows UI Automation (UIA) bridge:

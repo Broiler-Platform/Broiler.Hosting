@@ -191,6 +191,58 @@ public sealed class WindowsInputBridgeTests
         Assert.Equal("\\", events[4].Text);
     }
 
+    // The context code of a key message: bit 29 is set while Alt is down.
+    private const nint AltDownContext = 0x20000000;
+
+    [Fact]
+    public void AltCharacters_AreNotTyped()
+    {
+        var (_, bridge, events) = CreateTestHarness();
+        bridge.KeyStateProvider = vk => vk == WindowNative.VkMenu ? unchecked((short)0x8000) : (short)0;
+
+        // Alt+F (a menu key) and Alt+Space (the window menu)
+        bridge.ProcessNativeMessage(0, WindowNative.WmSysChar, 'f', AltDownContext);
+        bridge.ProcessNativeMessage(0, WindowNative.WmSysChar, ' ', AltDownContext);
+
+        Assert.Empty(events);
+    }
+
+    [Fact]
+    public void AltCharacters_GoOnToTheWindowProcedure()
+    {
+        using var window = new ProbeWindow(WindowNative.WmSysChar, WindowNative.WmSysDeadChar);
+        var (_, bridge, events) = CreateTestHarness(0, window.Handle);
+        using var attached = bridge;
+        bridge.KeyStateProvider = vk => vk == WindowNative.VkMenu ? unchecked((short)0x8000) : (short)0;
+
+        window.Send(WindowNative.WmSysChar, 'f', AltDownContext);
+        window.Send(WindowNative.WmSysChar, ' ', AltDownContext);
+        window.Send(WindowNative.WmSysDeadChar, '^', AltDownContext);
+
+        // DefWindowProc turns them into SC_KEYMENU: Alt+Space opens the window menu.
+        Assert.Equal(
+            new[] { (WindowNative.WmSysChar, (nint)'f'), (WindowNative.WmSysChar, (nint)' '), (WindowNative.WmSysDeadChar, (nint)'^') },
+            window.Received.ConvertAll(received => (received.Message, received.WParam)));
+        Assert.Empty(events);
+        Assert.True(bridge.DeadKeyActive);
+    }
+
+    [Fact]
+    public void AltGrAndAltNumpadCharacters_ArriveAsWmChar_AndAreTyped()
+    {
+        var (_, bridge, events) = CreateTestHarness();
+
+        // AltGr+Q on a German keyboard: Windows reports Ctrl and Alt down.
+        bridge.KeyStateProvider = vk => vk == WindowNative.VkControl || vk == WindowNative.VkMenu ? unchecked((short)0x8000) : (short)0;
+        bridge.ProcessNativeMessage(0, WindowNative.WmChar, '@', AltDownContext);
+
+        // Alt+0233 on the numeric keypad: the character comes as WM_CHAR, here with Alt still reported down.
+        bridge.KeyStateProvider = vk => vk == WindowNative.VkMenu ? unchecked((short)0x8000) : (short)0;
+        bridge.ProcessNativeMessage(0, WindowNative.WmChar, 'é', AltDownContext);
+
+        Assert.Equal(new[] { "@", "é" }, events.ConvertAll(ev => ev.Text));
+    }
+
     [Fact]
     public void DeadKeys_AreTrackedAndCompositeCharactersDelivered()
     {
