@@ -39,7 +39,8 @@ public static class WindowsTheme
     /// selected text, and the control states Broiler.UI draws on the state fill (listed in the remarks)
     /// are drawn in the highlight text color on the highlight color. The focus ring uses the highlight
     /// color only when it stands out from the window background (3:1), and falls back to the window text
-    /// color otherwise.
+    /// color otherwise. Text drawn in the accent (<c>AccentText</c>) is drawn on the window color, so it
+    /// uses the highlight color only when that reads there (4.5:1), and the window text color otherwise.
     /// Status colors that Windows does not define keep the high-contrast preset values where they are
     /// readable on the window background (4.5:1), and fall back to the window text color otherwise;
     /// the link color does the same with the system hyperlink color. The palette is flagged as high
@@ -61,10 +62,18 @@ public static class WindowsTheme
     /// Known gaps: Broiler.UI draws a pressed secondary button and a pressed spin box arrow on
     /// <c>SurfaceDisabled</c>, and a hovered unchecked toggle button on <c>SurfaceAlt</c>, not on the state
     /// fill. Both are the window color here, as disabled and alternate surfaces need, so those states stay
-    /// readable but look like the control at rest. Broiler.UI also draws in <c>Accent</c>, here the
-    /// highlight color, directly on the window color: text (an unchecked toggle button's label, the selected
-    /// tab header) and the progress bar's and slider's fill on their track. That reads in the four Windows 11
-    /// themes, but not in a custom theme whose highlight color is close to its window color.
+    /// readable but look like the control at rest. Broiler.UI also draws the progress bar's and slider's fill
+    /// in <c>Accent</c>, here the highlight color, directly on their window-colored track. That shows in the
+    /// four Windows 11 themes, but not in a custom theme whose highlight color is close to its window color.
+    /// </para>
+    /// <para>
+    /// <c>AccentText</c> colors the selected tab's label and the bar under it, an accent label, a toggle
+    /// button's label at rest, and inline code, all on the window color. In the four Windows 11 themes it is
+    /// the highlight color, which reads there at 6.8:1 (Dusk) to 11.8:1 (Night sky). A custom theme's
+    /// highlight color is chosen as a fill for its highlight text, so where it reads under 4.5:1 on the
+    /// window color the text takes the window text color, and the bar still marks the selected tab. It is
+    /// not drawn on the highlight color: a checked toggle button, the one control that draws accent text on
+    /// <c>AccentSoft</c>, draws the state text there, because the accent is the state fill.
     /// </para>
     /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
@@ -90,6 +99,8 @@ public static class WindowsTheme
             AccentPressed = colors.Highlight,
             AccentSoft = colors.Highlight,
             OnAccent = colors.HighlightText,
+            // Accent text is drawn on the window color, where a highlight chosen as a fill need not read.
+            AccentText = ReadableOnWindow(colors.Highlight, colors),
             // Windows pairs Highlight with HighlightText and has no muted variant of it.
             SelectionText = colors.HighlightText,
             SelectionTextMuted = colors.HighlightText,

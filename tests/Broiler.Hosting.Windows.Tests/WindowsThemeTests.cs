@@ -122,11 +122,12 @@ public sealed class WindowsThemeTests
         var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
         Assert.Equal(dark, tokens.IsDark);
 
-        // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on. The accent is text as well:
-        // an unchecked toggle button's label and the selected tab header.
+        // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on. Accent text is the selected
+        // tab's label, an accent label and a toggle button's label at rest. The accent itself is text where a
+        // control was never themed and draws from the shared palette (a toggle button's label).
         foreach (var (role, color) in new[] { ("text", tokens.Text), ("muted text", tokens.TextMuted),
             ("success", tokens.Success), ("warning", tokens.Warning), ("danger", tokens.Danger), ("link", tokens.Info),
-            ("accent", tokens.Accent) })
+            ("accent text", tokens.AccentText), ("accent", tokens.Accent) })
         {
             AssertContrast(color, tokens.Surface, 4.5, $"{name}: {role} on the window");
             AssertContrast(color, tokens.SurfaceAlt, 4.5, $"{name}: {role} on the alternate surface");
@@ -299,6 +300,22 @@ public sealed class WindowsThemeTests
         var tokens = WindowsTheme.CreateHighContrastTheme(colors);
         Assert.Equal(colors.WindowText, tokens.FocusRing);
         Assert.Equal(colors.WindowText, tokens.Info);
+    }
+
+    [Fact]
+    public void Accent_Text_Falls_Back_To_The_Window_Text_Where_The_Highlight_Does_Not_Read_On_The_Window()
+    {
+        // The Windows 11 themes' highlight reads on their window, so their accent text stays the highlight color.
+        foreach (var named in new[] { WindowsSystemColors.Aquatic, WindowsSystemColors.Desert, WindowsSystemColors.Dusk, WindowsSystemColors.NightSky })
+            Assert.Equal(named.Highlight, WindowsTheme.CreateHighContrastTheme(named).AccentText);
+
+        // A highlight at 4.2:1 on the window still stands out as a focus ring, and still fills the accent, the
+        // selection and the states, but text in it would not read: accent text takes the window text color.
+        var colors = Colors([0xFFFFFF, 0x000000, 0x3A7BD5, 0x000000, 0xFFFFFF, 0x000000, 0x6D6D6D, 0x0000EE]);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors);
+        Assert.Equal(colors.WindowText, tokens.AccentText);
+        Assert.Equal(colors.Highlight, tokens.FocusRing);
+        Assert.Equal(new[] { colors.Highlight, colors.Highlight, colors.Highlight }, new[] { tokens.Accent, tokens.AccentSoft, tokens.StateFill });
     }
 
     [Theory]
