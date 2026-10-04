@@ -130,6 +130,21 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     /// <summary>Raised when a provider's native wrapper is disconnected from UIA, for diagnostics and tests.</summary>
     internal event Action<IRawElementProviderSimple>? ProviderDisconnected;
 
+    /// <summary>
+    /// Whether a UIA client listens for events. UIA answers for the whole machine, so tests pin it to
+    /// see what a client would be sent.
+    /// </summary>
+    internal Func<bool> ClientsListening { get; set; } = UiaNative.UiaClientsAreListening;
+
+    /// <summary>Automation events raised to UIA (not property or structure changes), for diagnostics and tests.</summary>
+    internal event Action<IRawElementProviderSimple, int>? EventRaised;
+
+    internal void RaiseEvent(IRawElementProviderSimple target, int eventId)
+    {
+        EventRaised?.Invoke(target, eventId);
+        UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(target)!, eventId);
+    }
+
     private nint SubclassWindowProc(nint hWnd, uint uMsg, nint wParam, nint lParam, nuint uIdSubclass, nuint dwRefData)
     {
         if (uMsg == UiaNative.WmGetObject && !IsTornDown && ((int)lParam == UiaNative.UiaRootObjectId || unchecked((uint)(long)lParam) == 0xFFFFFFE7))
@@ -306,7 +321,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             return;
         }
 
-        if (!UiaNative.UiaClientsAreListening())
+        if (!ClientsListening())
             return;
 
         switch (e.Change)
@@ -315,7 +330,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             // rather than the list, and the root when focus went nowhere, never the element that lost it.
             case UiSemanticChangeKind.FocusChanged:
                 IRawElementProviderSimple focusedProvider = FocusTarget();
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(focusedProvider)!, UiaNative.UiaAutomationFocusChangedEventId);
+                RaiseEvent(focusedProvider, UiaNative.UiaAutomationFocusChangedEventId);
                 RaisePropertyChanged(focusedProvider, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
                 break;
 
@@ -323,7 +338,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 IRawElementProviderSimple target = e.Element is not null ? GetOrCreatePeer(e.Element) : this;
                 if (StatusAnnouncements.Plan(e.Element!, e.Message) is { } notification && RaiseNotification(target, notification))
                     break;
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(target)!, UiaNative.UiaLiveRegionChangedEventId);
+                RaiseEvent(target, UiaNative.UiaLiveRegionChangedEventId);
                 break;
 
             // Every semantic invalidation arrives as StateChanged; only real differences become UIA events,
@@ -385,7 +400,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         var providers = targets.ConvertAll<IRawElementProviderSimple>(element => ReferenceEquals(element, _root) ? this : _elementPeers[element.SemanticId]);
         StructureInvalidated?.Invoke(providers);
-        if (!UiaNative.UiaClientsAreListening())
+        if (!ClientsListening())
             return;
 
         foreach (IRawElementProviderSimple provider in providers)
@@ -445,7 +460,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             if (change.IsProperty)
                 RaisePropertyChanged(change.Target, change.Id, change.OldValue, change.NewValue);
             else
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(change.Target)!, change.Id);
+                RaiseEvent(change.Target, change.Id);
         }
     }
 

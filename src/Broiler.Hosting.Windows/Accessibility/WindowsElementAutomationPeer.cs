@@ -587,8 +587,8 @@ public sealed partial class WindowsElementAutomationPeer :
         if (el is UiButton button)
         {
             button.Click();
-            if (UiaNative.UiaClientsAreListening())
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaInvoke_InvokedEventId);
+            if (_bridge.ClientsListening())
+                _bridge.RaiseEvent(this, UiaNative.UiaInvoke_InvokedEventId);
         }
     }
 
@@ -706,8 +706,8 @@ public sealed partial class WindowsElementAutomationPeer :
                 if (lv.CanFocus) _bridge.Session.SetFocus(lv);
                 lv.SelectIndex(index);
                 lv.ScrollIntoView(_itemId!);
-                if (UiaNative.UiaClientsAreListening())
-                    UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
+                if (_bridge.ClientsListening())
+                    _bridge.RaiseEvent(this, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
             return;
         }
@@ -720,8 +720,8 @@ public sealed partial class WindowsElementAutomationPeer :
             {
                 if (tv.CanFocus) _bridge.Session.SetFocus(tv);
                 tv.SelectIndex(index);
-                if (UiaNative.UiaClientsAreListening())
-                    UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
+                if (_bridge.ClientsListening())
+                    _bridge.RaiseEvent(this, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
             return;
         }
