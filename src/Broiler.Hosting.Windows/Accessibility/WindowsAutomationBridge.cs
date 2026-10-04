@@ -372,13 +372,15 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private int _focusHoldDepth;
     private bool _focusMovedWhileHeld;
+    private (UiElement? Element, string? Item) _focusBeforeHold;
 
     /// <summary>
     /// Runs <paramref name="selection"/>, a selection a UIA client asked for, with focus events held, and
     /// then raises one focus event for wherever the focus is. Selecting focuses the list or tab view
     /// first, as a click does, and the focus event for that would name the row or tab selected before:
     /// a screen reader would read the old message ahead of the new one. Clients hear ElementSelected on
-    /// the new row, and then the focus on it, or on whatever the application's selection handler focused.
+    /// the new row, and then the focus on it, or on whatever the application's selection handler focused;
+    /// nothing when the focus ends where it started, since the moves between were never announced.
     /// </summary>
     /// <remarks>
     /// Only Select itself is covered. A client that calls SetFocus on the row before Select, as the
@@ -387,14 +389,14 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     /// </remarks>
     internal void HoldFocusEvents(Action selection)
     {
-        _focusHoldDepth++;
+        if (_focusHoldDepth++ == 0) _focusBeforeHold = FocusedItem();
         try { selection(); }
         finally
         {
             if (--_focusHoldDepth == 0 && _focusMovedWhileHeld)
             {
                 _focusMovedWhileHeld = false;
-                if (!IsTornDown && ClientsListening())
+                if (!IsTornDown && ClientsListening() && FocusedItem() != _focusBeforeHold)
                     RaiseFocusChanged();
             }
         }
@@ -849,28 +851,25 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     /// or tree, which have no focus apart from their selection, or the focused element; the root when
     /// nothing has the focus. Focus events go to the same provider.
     /// </summary>
-    internal IRawElementProviderFragment FocusTarget()
+    internal IRawElementProviderFragment FocusTarget() => FocusedItem() switch
     {
-        UiElement? focused = _session.FocusedElement;
-        if (focused is null) return this;
+        (null, _) => this,
+        (UiListView lv, { } itemId) => ItemPeer(lv, itemId),
+        (UiTabView tv, { } tabId) => TabPeer(tv, tabId),
+        (UiTreeView tree, { } node) => TreeRowPeer(tree, new TreeNodeId(node)),
+        (UiElement focused, _) => GetOrCreatePeer(focused),
+    };
 
-        if (focused is UiListView lv && lv.SelectedItemId is { } itemId && lv.IndexOf(itemId) >= 0)
-        {
-            return ItemPeer(lv, itemId);
-        }
-
-        if (focused is UiTabView tv && tv.SelectedTab is { } tab)
-        {
-            return TabPeer(tv, tab.Id);
-        }
-
-        if (focused is UiTreeView tree && !tree.FocusedNode.IsNone && WindowsElementAutomationPeer.IndexOfRow(tree, tree.FocusedNode) >= 0)
-        {
-            return TreeRowPeer(tree, tree.FocusedNode);
-        }
-
-        return GetOrCreatePeer(focused);
-    }
+    // What FocusTarget names, without making a peer for it: the focused element, and the id of the row,
+    // tab or tree row the focus is on inside it.
+    private (UiElement? Element, string? Item) FocusedItem() => _session.FocusedElement switch
+    {
+        null => (null, null),
+        UiListView lv when lv.SelectedItemId is { } itemId && lv.IndexOf(itemId) >= 0 => (lv, itemId),
+        UiTabView tv when tv.SelectedTab is { } tab => (tv, tab.Id),
+        UiTreeView tree when !tree.FocusedNode.IsNone && WindowsElementAutomationPeer.IndexOfRow(tree, tree.FocusedNode) >= 0 => (tree, tree.FocusedNode.Value),
+        UiElement focused => (focused, null),
+    };
 
     public void Dispose()
     {

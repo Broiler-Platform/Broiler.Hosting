@@ -268,6 +268,34 @@ public sealed class AutomationFocusTests
         Assert.Equal(["Inbox selected", "Reply focused"], FocusAndSelection(raised));
     }
 
+    [Fact]
+    public void SelectAnnouncesNoFocusWhenTheSelectionHandlerPutsItBack()
+    {
+        var (session, bridge, root) = Create();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        var tabs = new StandardTabView();
+        tabs.AddTab("inbox", "Inbox");
+        tabs.AddTab("compose", "Compose");
+        var reply = new StandardButton { Text = "Reply" };
+        root.AddChild(list);
+        root.AddChild(tabs);
+        root.AddChild(reply);
+        list.SelectIndex(0);
+        session.SetFocus(reply);
+        // Handlers that return the focus to where it was: its trip through the list or tab view was never
+        // announced, so telling clients of Reply again would only have it read twice.
+        list.SelectionChanged += (_, _) => session.SetFocus(reply);
+        tabs.SelectionChanged += (_, _) => session.SetFocus(reply);
+        var raised = Listen(bridge);
+
+        Select(bridge.GetOrCreateItemPeer(list, 1));
+        Select(bridge.GetOrCreateTabPeer(tabs, 1));
+
+        Assert.Same(reply, session.FocusedElement);
+        Assert.Equal(["Bravo selected", "Compose selected"], FocusAndSelection(raised));
+    }
+
     // The focus and selection events raised, in order, by the name of their target.
     private static string[] FocusAndSelection(List<(IRawElementProviderSimple Target, int EventId)> raised) =>
     [
