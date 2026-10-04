@@ -1,5 +1,8 @@
+using System;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
+using Broiler.Native.Windows;
+using Broiler.Native.Windows.Accessibility;
 
 namespace Broiler.Hosting.Windows.Accessibility;
 
@@ -26,22 +29,22 @@ internal static unsafe partial class AutomationMarshalling
 
     private static nint Array<T>(T[] values, VarEnum type) where T : unmanaged
     {
-        nint array = SafeArrayCreateVector((ushort)type, 0, (uint)values.Length);
+        nint array = OleAutNative.SafeArrayCreateVector((ushort)type, 0, (uint)values.Length);
         if (array == 0) throw new OutOfMemoryException();
         try
         {
-            Marshal.ThrowExceptionForHR(SafeArrayAccessData(array, out nint data));
+            Marshal.ThrowExceptionForHR(OleAutNative.SafeArrayAccessData(array, out nint data));
             try { values.AsSpan().CopyTo(new Span<T>((void*)data, values.Length)); }
-            finally { Marshal.ThrowExceptionForHR(SafeArrayUnaccessData(array)); }
+            finally { Marshal.ThrowExceptionForHR(OleAutNative.SafeArrayUnaccessData(array)); }
             return array;
         }
-        catch { SafeArrayDestroy(array); throw; }
+        catch { OleAutNative.SafeArrayDestroy(array); throw; }
     }
 
     internal static nint Providers(IRawElementProviderSimple[]? values)
     {
         if (values is null) return 0;
-        nint array = SafeArrayCreateVector((ushort)VarEnum.VT_UNKNOWN, 0, (uint)values.Length);
+        nint array = OleAutNative.SafeArrayCreateVector((ushort)VarEnum.VT_UNKNOWN, 0, (uint)values.Length);
         if (array == 0) throw new OutOfMemoryException();
         try
         {
@@ -49,39 +52,28 @@ internal static unsafe partial class AutomationMarshalling
             {
                 void* pointer = ComInterfaceMarshaller<INativeSimple>.ConvertToUnmanaged(NativeProviderAdapter.For(values[i]));
                 // PutElement takes an IUnknown* directly and adds its own reference.
-                try { Marshal.ThrowExceptionForHR(SafeArrayPutElement(array, in i, (nint)pointer)); }
+                try { Marshal.ThrowExceptionForHR(OleAutNative.SafeArrayPutElement(array, in i, (nint)pointer)); }
                 finally { ComInterfaceMarshaller<INativeSimple>.Free(pointer); }
             }
             return array;
         }
-        catch { SafeArrayDestroy(array); throw; }
+        catch { OleAutNative.SafeArrayDestroy(array); throw; }
     }
 
     internal static nint TextRanges(WindowsTextRange[] values)
     {
-        nint array = SafeArrayCreateVector((ushort)VarEnum.VT_UNKNOWN, 0, (uint)values.Length);
+        nint array = OleAutNative.SafeArrayCreateVector((ushort)VarEnum.VT_UNKNOWN, 0, (uint)values.Length);
         if (array == 0) throw new OutOfMemoryException();
         try
         {
             for (int i = 0; i < values.Length; i++)
             {
                 void* pointer = ComInterfaceMarshaller<INativeTextRange>.ConvertToUnmanaged(new NativeTextRange(values[i]));
-                try { Marshal.ThrowExceptionForHR(SafeArrayPutElement(array, in i, (nint)pointer)); }
+                try { Marshal.ThrowExceptionForHR(OleAutNative.SafeArrayPutElement(array, in i, (nint)pointer)); }
                 finally { ComInterfaceMarshaller<INativeTextRange>.Free(pointer); }
             }
             return array;
         }
-        catch { SafeArrayDestroy(array); throw; }
+        catch { OleAutNative.SafeArrayDestroy(array); throw; }
     }
-
-    [LibraryImport("oleaut32.dll")]
-    private static partial nint SafeArrayCreateVector(ushort type, int lowerBound, uint count);
-    [LibraryImport("oleaut32.dll")]
-    internal static partial int SafeArrayAccessData(nint array, out nint data);
-    [LibraryImport("oleaut32.dll")]
-    internal static partial int SafeArrayUnaccessData(nint array);
-    [LibraryImport("oleaut32.dll")]
-    internal static partial int SafeArrayDestroy(nint array);
-    [LibraryImport("oleaut32.dll")]
-    private static partial int SafeArrayPutElement(nint array, in int index, nint value);
 }

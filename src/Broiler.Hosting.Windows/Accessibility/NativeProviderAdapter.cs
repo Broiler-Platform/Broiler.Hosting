@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices.Marshalling;
+using Broiler.Native.Windows.Accessibility;
 
 namespace Broiler.Hosting.Windows.Accessibility;
 

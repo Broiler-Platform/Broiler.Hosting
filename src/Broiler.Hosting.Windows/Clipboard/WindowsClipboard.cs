@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using Broiler.Native.Windows;
 using Broiler.UI;
 
 namespace Broiler.Hosting.Windows;
@@ -13,8 +14,6 @@ namespace Broiler.Hosting.Windows;
 [SupportedOSPlatform("windows5.0")]
 public sealed class WindowsClipboard : IUiClipboardHost
 {
-    private const uint CfUnicodeText = 13;
-    private const uint GmemMoveable = 0x0002;
     private const int MaximumBytes = 1024 * 1024; // 1 MB boundary protection
 
     private readonly Func<IntPtr> _owner;
@@ -30,20 +29,20 @@ public sealed class WindowsClipboard : IUiClipboardHost
     {
         text = string.Empty;
         IntPtr ownerHandle = _owner();
-        if (!OpenClipboard(ownerHandle))
+        if (!ClipboardNative.OpenClipboard(ownerHandle))
             return false;
 
         try
         {
-            if (!IsClipboardFormatAvailable(CfUnicodeText))
+            if (!ClipboardNative.IsClipboardFormatAvailable(ClipboardNative.CF_UNICODETEXT))
                 return false;
 
-            IntPtr handle = GetClipboardData(CfUnicodeText);
-            nuint size = handle == IntPtr.Zero ? 0 : GlobalSize(handle);
+            IntPtr handle = ClipboardNative.GetClipboardData(ClipboardNative.CF_UNICODETEXT);
+            nuint size = handle == IntPtr.Zero ? 0 : ClipboardNative.GlobalSize(handle);
             if (size < 2 || size > MaximumBytes)
                 return false;
 
-            IntPtr pointer = GlobalLock(handle);
+            IntPtr pointer = ClipboardNative.GlobalLock(handle);
             if (pointer == IntPtr.Zero)
                 return false;
 
@@ -59,12 +58,12 @@ public sealed class WindowsClipboard : IUiClipboardHost
             }
             finally
             {
-                GlobalUnlock(handle);
+                ClipboardNative.GlobalUnlock(handle);
             }
         }
         finally
         {
-            CloseClipboard();
+            ClipboardNative.CloseClipboard();
         }
     }
 
@@ -75,22 +74,22 @@ public sealed class WindowsClipboard : IUiClipboardHost
             return;
 
         IntPtr ownerHandle = _owner();
-        if (!OpenClipboard(ownerHandle))
+        if (!ClipboardNative.OpenClipboard(ownerHandle))
             return;
 
         try
         {
-            EmptyClipboard();
+            ClipboardNative.EmptyClipboard();
 
             int bytes = (text.Length + 1) * sizeof(char);
-            IntPtr block = GlobalAlloc(GmemMoveable, (nuint)bytes);
+            IntPtr block = ClipboardNative.GlobalAlloc(ClipboardNative.GMEM_MOVEABLE, (nuint)bytes);
             if (block == IntPtr.Zero)
                 return;
 
-            IntPtr pointer = GlobalLock(block);
+            IntPtr pointer = ClipboardNative.GlobalLock(block);
             if (pointer == IntPtr.Zero)
             {
-                GlobalFree(block);
+                ClipboardNative.GlobalFree(block);
                 return;
             }
 
@@ -101,53 +100,15 @@ public sealed class WindowsClipboard : IUiClipboardHost
             }
             finally
             {
-                GlobalUnlock(block);
+                ClipboardNative.GlobalUnlock(block);
             }
 
-            if (SetClipboardData(CfUnicodeText, block) == IntPtr.Zero)
-                GlobalFree(block);
+            if (ClipboardNative.SetClipboardData(ClipboardNative.CF_UNICODETEXT, block) == IntPtr.Zero)
+                ClipboardNative.GlobalFree(block);
         }
         finally
         {
-            CloseClipboard();
+            ClipboardNative.CloseClipboard();
         }
     }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool OpenClipboard(IntPtr owner);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CloseClipboard();
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool EmptyClipboard();
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool IsClipboardFormatAvailable(uint format);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr GetClipboardData(uint format);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr SetClipboardData(uint format, IntPtr data);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GlobalAlloc(uint flags, nuint bytes);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GlobalFree(IntPtr handle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr GlobalLock(IntPtr handle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GlobalUnlock(IntPtr handle);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern nuint GlobalSize(IntPtr handle);
 }

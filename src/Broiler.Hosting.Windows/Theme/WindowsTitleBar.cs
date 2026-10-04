@@ -1,5 +1,5 @@
 using System;
-using System.Runtime.InteropServices;
+using Broiler.Native.Windows;
 
 namespace Broiler.Hosting.Windows;
 
@@ -9,8 +9,6 @@ namespace Broiler.Hosting.Windows;
 /// </summary>
 public static class WindowsTitleBar
 {
-    private const int ImmersiveDarkMode = 20; // DWMWA_USE_IMMERSIVE_DARK_MODE
-
     /// <summary>
     /// Requests a dark or light caption for <paramref name="window"/>. Call it after the native window
     /// exists (for a Direct2DWindow, after Show) and again whenever the applied palette changes.
@@ -24,14 +22,11 @@ public static class WindowsTitleBar
         try
         {
             int value = dark ? 1 : 0;
-            return DwmSetWindowAttribute(window, ImmersiveDarkMode, ref value, sizeof(int)) == 0;
+            return DwmNative.DwmSetWindowAttribute(window, DwmNative.DWMWA_USE_IMMERSIVE_DARK_MODE, ref value, sizeof(int)) == 0;
         }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException)
         {
             return false;
         }
     }
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(nint window, int attribute, ref int value, int size);
 }

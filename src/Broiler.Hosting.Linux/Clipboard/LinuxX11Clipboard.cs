@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using Broiler.Native.Linux.OpenGL;
 using Broiler.UI;
 
 namespace Broiler.Hosting.Linux;
@@ -17,17 +18,6 @@ namespace Broiler.Hosting.Linux;
 /// </summary>
 public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
 {
-    private const int SelectionClear = 29;
-    private const int SelectionRequest = 30;
-    private const int SelectionNotify = 31;
-    private const int PropertyNotify = 28;
-
-    private const int PropertyNewValue = 0;
-    private const long PropertyChangeMask = 1L << 22;
-    private const int PropModeReplace = 0;
-    private const int XaAtom = 4;
-    private const int XaString = 31;
-
     private const int MaximumBytes = 1024 * 1024; // 1 MB boundary protection
 
     /// <summary>
@@ -72,7 +62,7 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         IntPtr display;
         try
         {
-            display = XOpenDisplay(IntPtr.Zero);
+            display = LinuxX11Native.OpenDisplay(IntPtr.Zero);
         }
         catch (DllNotFoundException)
         {
@@ -82,21 +72,21 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         if (display == IntPtr.Zero)
             return null;
 
-        int screen = XDefaultScreen(display);
-        IntPtr window = XCreateSimpleWindow(display, XRootWindow(display, screen), 0, 0, 1, 1, 0, IntPtr.Zero, IntPtr.Zero);
+        int screen = LinuxX11Native.DefaultScreen(display);
+        IntPtr window = LinuxX11Native.CreateSimpleWindow(display, LinuxX11Native.RootWindow(display, screen), 0, 0, 1, 1, 0, IntPtr.Zero, IntPtr.Zero);
         if (window == IntPtr.Zero)
         {
-            XCloseDisplay(display);
+            LinuxX11Native.CloseDisplay(display);
             return null;
         }
 
-        XSelectInput(display, window, PropertyChangeMask);
-        XFlush(display);
+        LinuxX11Native.SelectInput(display, window, LinuxX11Native.PropertyChangeMask);
+        LinuxX11Native.Flush(display);
         return new LinuxX11Clipboard(display, window);
     }
 
     /// <summary>Whether this process currently owns the CLIPBOARD selection.</summary>
-    public bool OwnsClipboard => !_isDisposed && XGetSelectionOwner(_display, _clipboard) == _window;
+    public bool OwnsClipboard => !_isDisposed && LinuxX11Native.GetSelectionOwner(_display, _clipboard) == _window;
 
     public bool TryGetText(out string text)
     {
@@ -104,7 +94,7 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         if (_isDisposed)
             return false;
 
-        IntPtr owner = XGetSelectionOwner(_display, _clipboard);
+        IntPtr owner = LinuxX11Native.GetSelectionOwner(_display, _clipboard);
         if (owner == IntPtr.Zero)
             return false;
 
@@ -116,7 +106,7 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
 
         if (TryConvert(_utf8String, Encoding.UTF8, out text) && text.Length > 0)
             return true;
-        if (TryConvert(new IntPtr(XaString), Encoding.Latin1, out text) && text.Length > 0)
+        if (TryConvert(new IntPtr(LinuxX11Native.XaString), Encoding.Latin1, out text) && text.Length > 0)
             return true;
 
         text = string.Empty;
@@ -134,16 +124,16 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
             return;
 
         _ownedText = text;
-        XSetSelectionOwner(_display, _clipboard, _window, IntPtr.Zero);
+        LinuxX11Native.SetSelectionOwner(_display, _clipboard, _window, IntPtr.Zero);
 
-        if (XGetSelectionOwner(_display, _clipboard) != _window)
+        if (LinuxX11Native.GetSelectionOwner(_display, _clipboard) != _window)
         {
             _ownedText = null;
             return;
         }
 
-        XSetSelectionOwner(_display, _primary, _window, IntPtr.Zero);
-        XFlush(_display);
+        LinuxX11Native.SetSelectionOwner(_display, _primary, _window, IntPtr.Zero);
+        LinuxX11Native.Flush(_display);
     }
 
     /// <summary>
@@ -154,9 +144,9 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         if (_isDisposed)
             return;
 
-        while (XPending(_display) > 0)
+        while (LinuxX11Native.Pending(_display) > 0)
         {
-            XNextEvent(_display, out XEvent nextEvent);
+            LinuxX11Native.NextEvent(_display, out LinuxX11Native.XEvent nextEvent);
             HandleEvent(ref nextEvent);
         }
     }
@@ -171,38 +161,38 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
 
         if (OperatingSystem.IsLinux() && _display != IntPtr.Zero)
         {
-            if (XGetSelectionOwner(_display, _clipboard) == _window)
-                XSetSelectionOwner(_display, _clipboard, IntPtr.Zero, IntPtr.Zero);
-            if (XGetSelectionOwner(_display, _primary) == _window)
-                XSetSelectionOwner(_display, _primary, IntPtr.Zero, IntPtr.Zero);
+            if (LinuxX11Native.GetSelectionOwner(_display, _clipboard) == _window)
+                LinuxX11Native.SetSelectionOwner(_display, _clipboard, IntPtr.Zero, IntPtr.Zero);
+            if (LinuxX11Native.GetSelectionOwner(_display, _primary) == _window)
+                LinuxX11Native.SetSelectionOwner(_display, _primary, IntPtr.Zero, IntPtr.Zero);
 
-            XDestroyWindow(_display, _window);
-            XCloseDisplay(_display);
+            LinuxX11Native.DestroyWindow(_display, _window);
+            LinuxX11Native.CloseDisplay(_display);
         }
     }
 
-    private void HandleEvent(ref XEvent nextEvent)
+    private void HandleEvent(ref LinuxX11Native.XEvent nextEvent)
     {
         switch (nextEvent.Type)
         {
-            case SelectionRequest:
-                AnswerSelectionRequest(ref Unsafe.As<XEvent, XSelectionRequestEvent>(ref nextEvent));
+            case LinuxX11Native.SelectionRequest:
+                AnswerSelectionRequest(ref Unsafe.As<LinuxX11Native.XEvent, LinuxX11Native.XSelectionRequestEvent>(ref nextEvent));
                 break;
 
-            case SelectionClear:
+            case LinuxX11Native.SelectionClear:
                 _ownedText = null;
                 break;
         }
     }
 
-    private void AnswerSelectionRequest(ref XSelectionRequestEvent request)
+    private void AnswerSelectionRequest(ref LinuxX11Native.XSelectionRequestEvent request)
     {
         IntPtr property = request.Property == IntPtr.Zero ? request.Target : request.Property;
         bool answered = _ownedText is string owned && TryWriteRequestedTarget(ref request, property, owned);
 
-        var reply = new XSelectionEvent
+        var reply = new LinuxX11Native.XSelectionEvent
         {
-            Type = SelectionNotify,
+            Type = LinuxX11Native.SelectionNotify,
             Display = request.Display,
             Requestor = request.Requestor,
             Selection = request.Selection,
@@ -211,26 +201,26 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
             Time = request.Time,
         };
 
-        XEvent sendEvent = default;
-        Unsafe.As<XEvent, XSelectionEvent>(ref sendEvent) = reply;
+        LinuxX11Native.XEvent sendEvent = default;
+        Unsafe.As<LinuxX11Native.XEvent, LinuxX11Native.XSelectionEvent>(ref sendEvent) = reply;
 
-        XSendEvent(_display, request.Requestor, 0, 0, ref sendEvent);
-        XFlush(_display);
+        LinuxX11Native.SendEvent(_display, request.Requestor, 0, 0, ref sendEvent);
+        LinuxX11Native.Flush(_display);
     }
 
-    private bool TryWriteRequestedTarget(ref XSelectionRequestEvent request, IntPtr property, string owned)
+    private bool TryWriteRequestedTarget(ref LinuxX11Native.XSelectionRequestEvent request, IntPtr property, string owned)
     {
         if (request.Target == _targets)
         {
-            IntPtr[] supported = [_targets, _utf8String, new IntPtr(XaString), _text];
-            XChangeProperty(_display, request.Requestor, property, new IntPtr(XaAtom), 32, PropModeReplace, supported, supported.Length);
+            IntPtr[] supported = [_targets, _utf8String, new IntPtr(LinuxX11Native.XaString), _text];
+            LinuxX11Native.ChangeProperty(_display, request.Requestor, property, new IntPtr(LinuxX11Native.XaAtom), 32, LinuxX11Native.PropModeReplace, supported, supported.Length);
             return true;
         }
 
         Encoding? encoding = null;
         if (request.Target == _utf8String || request.Target == _text)
             encoding = Encoding.UTF8;
-        else if (request.Target == new IntPtr(XaString))
+        else if (request.Target == new IntPtr(LinuxX11Native.XaString))
             encoding = Encoding.Latin1;
 
         if (encoding is null)
@@ -241,15 +231,15 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         if (bytes.Length > MaxPropertyBytes())
             return false;
 
-        XChangeProperty(_display, request.Requestor, property, request.Target, 8, PropModeReplace, bytes, bytes.Length);
+        LinuxX11Native.ChangeProperty(_display, request.Requestor, property, request.Target, 8, LinuxX11Native.PropModeReplace, bytes, bytes.Length);
         return true;
     }
 
     private long MaxPropertyBytes()
     {
-        long units = XExtendedMaxRequestSize(_display);
+        long units = LinuxX11Native.ExtendedMaxRequestSize(_display);
         if (units <= 0)
-            units = XMaxRequestSize(_display);
+            units = LinuxX11Native.MaxRequestSize(_display);
 
         return Math.Max(0, (units * 4) - 1024);
     }
@@ -257,9 +247,9 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
     private bool TryConvert(IntPtr target, Encoding encoding, out string text)
     {
         text = string.Empty;
-        XDeleteProperty(_display, _window, _transferProperty);
-        XConvertSelection(_display, _clipboard, target, _transferProperty, _window, IntPtr.Zero);
-        XFlush(_display);
+        LinuxX11Native.DeleteProperty(_display, _window, _transferProperty);
+        LinuxX11Native.ConvertSelection(_display, _clipboard, target, _transferProperty, _window, IntPtr.Zero);
+        LinuxX11Native.Flush(_display);
 
         if (!TryWaitForSelectionNotify(target, out bool refused) || refused)
             return false;
@@ -280,20 +270,20 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         long deadline = Deadline();
         while (Stopwatch.GetTimestamp() < deadline)
         {
-            if (XPending(_display) == 0)
+            if (LinuxX11Native.Pending(_display) == 0)
             {
                 Thread.Sleep(1);
                 continue;
             }
 
-            XNextEvent(_display, out XEvent nextEvent);
-            if (nextEvent.Type != SelectionNotify)
+            LinuxX11Native.NextEvent(_display, out LinuxX11Native.XEvent nextEvent);
+            if (nextEvent.Type != LinuxX11Native.SelectionNotify)
             {
                 HandleEvent(ref nextEvent);
                 continue;
             }
 
-            ref XSelectionEvent notify = ref Unsafe.As<XEvent, XSelectionEvent>(ref nextEvent);
+            ref LinuxX11Native.XSelectionEvent notify = ref Unsafe.As<LinuxX11Native.XEvent, LinuxX11Native.XSelectionEvent>(ref nextEvent);
             if (notify.Requestor != _window || notify.Target != target)
                 continue;
 
@@ -312,21 +302,21 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         long deadline = Deadline();
         while (Stopwatch.GetTimestamp() < deadline)
         {
-            if (XPending(_display) == 0)
+            if (LinuxX11Native.Pending(_display) == 0)
             {
                 Thread.Sleep(1);
                 continue;
             }
 
-            XNextEvent(_display, out XEvent nextEvent);
-            if (nextEvent.Type != PropertyNotify)
+            LinuxX11Native.NextEvent(_display, out LinuxX11Native.XEvent nextEvent);
+            if (nextEvent.Type != LinuxX11Native.PropertyNotify)
             {
                 HandleEvent(ref nextEvent);
                 continue;
             }
 
-            ref XPropertyEvent property = ref Unsafe.As<XEvent, XPropertyEvent>(ref nextEvent);
-            if (property.Window != _window || property.Atom != _transferProperty || property.State != PropertyNewValue)
+            ref LinuxX11Native.XPropertyEvent property = ref Unsafe.As<LinuxX11Native.XEvent, LinuxX11Native.XPropertyEvent>(ref nextEvent);
+            if (property.Window != _window || property.Atom != _transferProperty || property.State != LinuxX11Native.PropertyNewValue)
                 continue;
 
             if (!TryReadProperty(delete: true, out byte[] chunk, out _))
@@ -352,7 +342,7 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         data = [];
         type = IntPtr.Zero;
 
-        if (XGetWindowProperty(
+        if (LinuxX11Native.GetWindowProperty(
                 _display,
                 _window,
                 _transferProperty,
@@ -370,13 +360,13 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         }
 
         if (peek != IntPtr.Zero)
-            XFree(peek);
+            LinuxX11Native.Free(peek);
         if (type == IntPtr.Zero)
             return false;
 
         long bytes = (long)remaining;
         var length = new IntPtr((bytes + 3) / 4);
-        if (XGetWindowProperty(
+        if (LinuxX11Native.GetWindowProperty(
                 _display,
                 _window,
                 _transferProperty,
@@ -413,144 +403,9 @@ public sealed class LinuxX11Clipboard : IUiClipboardHost, IDisposable
         }
         finally
         {
-            XFree(value);
+            LinuxX11Native.Free(value);
         }
     }
 
-    private static IntPtr InternAtom(IntPtr display, string name) => XInternAtom(display, name, 0);
-
-    [StructLayout(LayoutKind.Sequential, Size = 192)]
-    private struct XEvent
-    {
-        public int Type;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct XSelectionRequestEvent
-    {
-        public int Type;
-        public IntPtr Serial;
-        public int SendEvent;
-        public IntPtr Display;
-        public IntPtr Owner;
-        public IntPtr Requestor;
-        public IntPtr Selection;
-        public IntPtr Target;
-        public IntPtr Property;
-        public IntPtr Time;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct XSelectionEvent
-    {
-        public int Type;
-        public IntPtr Serial;
-        public int SendEvent;
-        public IntPtr Display;
-        public IntPtr Requestor;
-        public IntPtr Selection;
-        public IntPtr Target;
-        public IntPtr Property;
-        public IntPtr Time;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct XPropertyEvent
-    {
-        public int Type;
-        public IntPtr Serial;
-        public int SendEvent;
-        public IntPtr Display;
-        public IntPtr Window;
-        public IntPtr Atom;
-        public IntPtr Time;
-        public int State;
-    }
-
-    [DllImport("libX11.so.6", EntryPoint = "XOpenDisplay")]
-    private static extern IntPtr XOpenDisplay(IntPtr name);
-
-    [DllImport("libX11.so.6", EntryPoint = "XCloseDisplay")]
-    private static extern int XCloseDisplay(IntPtr display);
-
-    [DllImport("libX11.so.6", EntryPoint = "XDefaultScreen")]
-    private static extern int XDefaultScreen(IntPtr display);
-
-    [DllImport("libX11.so.6", EntryPoint = "XRootWindow")]
-    private static extern IntPtr XRootWindow(IntPtr display, int screen);
-
-    [DllImport("libX11.so.6", EntryPoint = "XCreateSimpleWindow")]
-    private static extern IntPtr XCreateSimpleWindow(
-        IntPtr display,
-        IntPtr parent,
-        int x,
-        int y,
-        uint width,
-        uint height,
-        uint borderWidth,
-        IntPtr border,
-        IntPtr background);
-
-    [DllImport("libX11.so.6", EntryPoint = "XDestroyWindow")]
-    private static extern int XDestroyWindow(IntPtr display, IntPtr window);
-
-    [DllImport("libX11.so.6", EntryPoint = "XSelectInput")]
-    private static extern int XSelectInput(IntPtr display, IntPtr window, long mask);
-
-    [DllImport("libX11.so.6", EntryPoint = "XInternAtom")]
-    private static extern IntPtr XInternAtom(IntPtr display, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int onlyIfExists);
-
-    [DllImport("libX11.so.6", EntryPoint = "XSetSelectionOwner")]
-    private static extern int XSetSelectionOwner(IntPtr display, IntPtr selection, IntPtr owner, IntPtr time);
-
-    [DllImport("libX11.so.6", EntryPoint = "XGetSelectionOwner")]
-    private static extern IntPtr XGetSelectionOwner(IntPtr display, IntPtr selection);
-
-    [DllImport("libX11.so.6", EntryPoint = "XConvertSelection")]
-    private static extern int XConvertSelection(IntPtr display, IntPtr selection, IntPtr target, IntPtr property, IntPtr requestor, IntPtr time);
-
-    [DllImport("libX11.so.6", EntryPoint = "XChangeProperty")]
-    private static extern int XChangeProperty(IntPtr display, IntPtr window, IntPtr property, IntPtr type, int format, int mode, byte[] data, int elements);
-
-    [DllImport("libX11.so.6", EntryPoint = "XChangeProperty")]
-    private static extern int XChangeProperty(IntPtr display, IntPtr window, IntPtr property, IntPtr type, int format, int mode, IntPtr[] data, int elements);
-
-    [DllImport("libX11.so.6", EntryPoint = "XDeleteProperty")]
-    private static extern int XDeleteProperty(IntPtr display, IntPtr window, IntPtr property);
-
-    [DllImport("libX11.so.6", EntryPoint = "XGetWindowProperty")]
-    private static extern int XGetWindowProperty(
-        IntPtr display,
-        IntPtr window,
-        IntPtr property,
-        IntPtr offset,
-        IntPtr length,
-        int delete,
-        IntPtr requestedType,
-        out IntPtr actualType,
-        out int actualFormat,
-        out IntPtr items,
-        out IntPtr bytesAfter,
-        out IntPtr value);
-
-    [DllImport("libX11.so.6", EntryPoint = "XSendEvent")]
-    private static extern int XSendEvent(IntPtr display, IntPtr window, int propagate, long mask, ref XEvent sendEvent);
-
-    [DllImport("libX11.so.6", EntryPoint = "XMaxRequestSize")]
-    private static extern long XMaxRequestSize(IntPtr display);
-
-    [DllImport("libX11.so.6", EntryPoint = "XExtendedMaxRequestSize")]
-    private static extern long XExtendedMaxRequestSize(IntPtr display);
-
-    [DllImport("libX11.so.6", EntryPoint = "XPending")]
-    private static extern int XPending(IntPtr display);
-
-    [DllImport("libX11.so.6", EntryPoint = "XNextEvent")]
-    private static extern int XNextEvent(IntPtr display, out XEvent nextEvent);
-
-    [DllImport("libX11.so.6", EntryPoint = "XFlush")]
-    private static extern int XFlush(IntPtr display);
-
-    [DllImport("libX11.so.6", EntryPoint = "XFree")]
-    private static extern int XFree(IntPtr data);
+    private static IntPtr InternAtom(IntPtr display, string name) => LinuxX11Native.InternAtom(display, name, 0);
 }

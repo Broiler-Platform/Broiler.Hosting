@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Broiler.Graphics.Geometry;
+using Broiler.Native.Windows;
+using Broiler.Native.Windows.Accessibility;
 using Broiler.UI;
 using Broiler.UI.ListView;
 using Broiler.UI.TabView;
@@ -22,7 +24,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 {
     private static nuint _subclassCounter;
     private readonly nuint _subclassId;
-    private readonly UiaNative.SubclassProc? _subclassProc;
+    private readonly WindowNative.SubclassProc? _subclassProc;
 
     private readonly nint _hwnd;
     private readonly UiSession _session;
@@ -70,7 +72,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             _subclassId = ++_subclassCounter;
             _subclassProc = SubclassWindowProc;
-            UiaNative.SetWindowSubclass(_hwnd, _subclassProc, _subclassId, 0);
+            WindowNative.SetWindowSubclass(_hwnd, _subclassProc, _subclassId, 0);
         }
         else
         {
@@ -90,10 +92,10 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     {
         if (uMsg == UiaNative.WmGetObject && ((int)lParam == UiaNative.UiaRootObjectId || unchecked((uint)(long)lParam) == 0xFFFFFFE7))
         {
-            return UiaNative.UiaReturnRawElementProvider(hWnd, wParam, lParam, this);
+            return UiaNative.UiaReturnRawElementProvider(hWnd, wParam, lParam, NativeProviderAdapter.For(this)!);
         }
 
-        return UiaNative.DefSubclassProc(hWnd, uMsg, wParam, lParam);
+        return WindowNative.DefSubclassProc(hWnd, uMsg, wParam, lParam);
     }
 
     public WindowsElementAutomationPeer GetOrCreatePeer(UiElement element)
@@ -141,8 +143,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         if (_hwnd == nint.Zero)
             return new UiaRect(dipRect.X, dipRect.Y, dipRect.Width, dipRect.Height);
 
-        var pt = new UiaNative.POINT { X = 0, Y = 0 };
-        UiaNative.ClientToScreen(_hwnd, ref pt);
+        var pt = new WindowNative.POINT { X = 0, Y = 0 };
+        WindowNative.ClientToScreen(_hwnd, ref pt);
         double scale = _scaleProvider();
 
         return new UiaRect(
@@ -161,15 +163,15 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             case UiSemanticChangeKind.FocusChanged when e.Element is not null:
                 WindowsElementAutomationPeer focusedPeer = GetOrCreatePeer(e.Element);
-                UiaNative.UiaRaiseAutomationEvent(focusedPeer, UiaNative.UiaAutomationFocusChangedEventId);
-                UiaNative.UiaRaiseAutomationPropertyChangedEvent(focusedPeer, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
+                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(focusedPeer)!, UiaNative.UiaAutomationFocusChangedEventId);
+                RaisePropertyChanged(focusedPeer, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
                 break;
 
             case UiSemanticChangeKind.StatusAnnounced:
                 IRawElementProviderSimple target = e.Element is not null ? GetOrCreatePeer(e.Element) : this;
                 if (StatusAnnouncements.Plan(e.Element!, e.Message) is { } notification && RaiseNotification(target, notification))
                     break;
-                UiaNative.UiaRaiseAutomationEvent(target, UiaNative.UiaLiveRegionChangedEventId);
+                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(target)!, UiaNative.UiaLiveRegionChangedEventId);
                 break;
 
             // Every semantic invalidation arrives as StateChanged; only real differences become UIA events,
@@ -181,7 +183,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
             case UiSemanticChangeKind.StructureChanged or UiSemanticChangeKind.SubtreeChanged:
                 CleanDeadPeers();
-                UiaNative.UiaRaiseStructureChangedEvent(this, StructureChangeType.ChildrenInvalidated, null, 0);
+                UiaNative.UiaRaiseStructureChangedEvent(NativeProviderAdapter.For(this)!, StructureChangeType.ChildrenInvalidated, null, 0);
                 break;
         }
     }
@@ -215,9 +217,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         foreach (AutomationChange change in changes)
         {
             if (change.IsProperty)
-                UiaNative.UiaRaiseAutomationPropertyChangedEvent(change.Target, change.Id, change.OldValue!, change.NewValue!);
+                RaisePropertyChanged(change.Target, change.Id, change.OldValue, change.NewValue);
             else
-                UiaNative.UiaRaiseAutomationEvent(change.Target, change.Id);
+                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(change.Target)!, change.Id);
         }
     }
 
@@ -265,7 +267,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         if (_notificationsUnavailable) return false;
         try
         {
-            UiaNative.UiaRaiseNotificationEvent(target, NotificationKind.Other, notification.Processing, notification.Text, notification.ActivityId);
+            UiaNative.UiaRaiseNotificationEvent(NativeProviderAdapter.For(target)!, NotificationKind.Other, notification.Processing, notification.Text, notification.ActivityId);
             return true;
         }
         catch (EntryPointNotFoundException)
@@ -273,6 +275,13 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             _notificationsUnavailable = true;
             return false;
         }
+    }
+
+    private static void RaisePropertyChanged(IRawElementProviderSimple provider, int propertyId, object? oldValue, object? newValue)
+    {
+        using var oldVar = AutomationMarshalling.ToVariant(oldValue);
+        using var newVar = AutomationMarshalling.ToVariant(newValue);
+        UiaNative.UiaRaiseAutomationPropertyChangedEvent(NativeProviderAdapter.For(provider)!, propertyId, AutomationVariant.From(oldVar), AutomationVariant.From(newVar));
     }
 
     private void CleanDeadPeers()
@@ -396,8 +405,8 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         if (_hwnd != nint.Zero)
         {
-            var pt = new UiaNative.POINT { X = (int)x, Y = (int)y };
-            UiaNative.ScreenToClient(_hwnd, ref pt);
+            var pt = new WindowNative.POINT { X = (int)x, Y = (int)y };
+            WindowNative.ScreenToClient(_hwnd, ref pt);
             dipX = pt.X / scale;
             dipY = pt.Y / scale;
         }
@@ -476,7 +485,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         if (_hwnd != nint.Zero && _subclassProc is not null)
         {
-            UiaNative.RemoveWindowSubclass(_hwnd, _subclassProc, _subclassId);
+            WindowNative.RemoveWindowSubclass(_hwnd, _subclassProc, _subclassId);
         }
 
         _elementPeers.Clear();

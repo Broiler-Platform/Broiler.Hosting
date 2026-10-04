@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using Broiler.Graphics.Color;
+using Broiler.Native.Windows;
 
 namespace Broiler.Hosting.Windows;
 
@@ -18,15 +19,6 @@ public readonly record struct WindowsSystemColors(
     BColor GrayText,
     BColor HotLight)
 {
-    private const int ColorWindow = 5;
-    private const int ColorWindowText = 8;
-    private const int ColorHighlight = 13;
-    private const int ColorHighlightText = 14;
-    private const int ColorButtonFace = 15;
-    private const int ColorGrayText = 17;
-    private const int ColorButtonText = 18;
-    private const int ColorHotLight = 26;
-
     /// <summary>Reads the current system colors. Returns null when not running on Windows.</summary>
     public static WindowsSystemColors? Query()
     {
@@ -36,8 +28,14 @@ public readonly record struct WindowsSystemColors(
         try
         {
             return new WindowsSystemColors(
-                Read(ColorWindow), Read(ColorWindowText), Read(ColorHighlight), Read(ColorHighlightText),
-                Read(ColorButtonFace), Read(ColorButtonText), Read(ColorGrayText), Read(ColorHotLight));
+                Read(WindowNative.ColorWindow),
+                Read(WindowNative.ColorWindowText),
+                Read(WindowNative.ColorHighlight),
+                Read(WindowNative.ColorHighlightText),
+                Read(WindowNative.ColorButtonFace),
+                Read(WindowNative.ColorButtonText),
+                Read(WindowNative.ColorGrayText),
+                Read(WindowNative.ColorHotLight));
         }
         catch (Exception error) when (error is DllNotFoundException or EntryPointNotFoundException)
         {
@@ -49,8 +47,5 @@ public readonly record struct WindowsSystemColors(
     internal static BColor FromColorRef(uint colorRef) =>
         new((byte)(colorRef & 0xFF), (byte)((colorRef >> 8) & 0xFF), (byte)((colorRef >> 16) & 0xFF), 255);
 
-    private static BColor Read(int index) => FromColorRef(GetSysColor(index));
-
-    [DllImport("user32.dll")]
-    private static extern uint GetSysColor(int index);
+    private static BColor Read(int index) => FromColorRef(WindowNative.GetSysColor(index));
 }

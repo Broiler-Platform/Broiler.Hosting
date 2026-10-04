@@ -5,6 +5,8 @@ using Broiler.Graphics.Geometry;
 using Broiler.Input;
 using Broiler.Input.Mouse;
 using Broiler.Input.Text;
+using Broiler.Native.Windows;
+using Broiler.Native.Windows.Input;
 using Broiler.UI;
 
 namespace Broiler.Hosting.Windows.Input;
@@ -19,7 +21,7 @@ public sealed class WindowsInputBridge : IDisposable
 {
     private static nuint _subclassCounter;
     private readonly nuint _subclassId;
-    private readonly InputNative.SubclassProc? _subclassProc;
+    private readonly WindowNative.SubclassProc? _subclassProc;
 
     private readonly nint _topLevelHwnd;
     private readonly nint _renderHwnd;
@@ -42,15 +44,15 @@ public sealed class WindowsInputBridge : IDisposable
     private static readonly TimeSpan CommittedCopyWindow = TimeSpan.FromMilliseconds(500);
 
     // Testability hooks
-    public Func<int, short> KeyStateProvider { get; set; } = InputNative.GetKeyState;
+    public Func<int, short> KeyStateProvider { get; set; } = WindowNative.GetKeyState;
     public Func<nint, uint, string> CompositionStringProvider { get; set; } = ReadCompositionStringFromImm;
     /// <summary>The clock for the backstop that ends suppression of an IME commit's WM_CHAR copies.</summary>
     public TimeProvider Clock { get; set; } = TimeProvider.System;
-    public Action<nint>? SetFocusAction { get; set; } = hwnd => { if (hwnd != nint.Zero) InputNative.SetFocus(hwnd); };
-    public Func<nint, InputNative.POINT, InputNative.POINT> ScreenToClientAction { get; set; } = (hwnd, pt) =>
+    public Action<nint>? SetFocusAction { get; set; } = hwnd => { if (hwnd != nint.Zero) WindowNative.SetFocus(hwnd); };
+    public Func<nint, WindowNative.POINT, WindowNative.POINT> ScreenToClientAction { get; set; } = (hwnd, pt) =>
     {
         if (hwnd != nint.Zero)
-            InputNative.ScreenToClient(hwnd, ref pt);
+            WindowNative.ScreenToClient(hwnd, ref pt);
         return pt;
     };
     public event Action<UiInputEvent>? EventDispatched;
@@ -87,7 +89,7 @@ public sealed class WindowsInputBridge : IDisposable
         {
             _subclassId = ++_subclassCounter;
             _subclassProc = SubclassWindowProc;
-            InputNative.SetWindowSubclass(_renderHwnd, _subclassProc, _subclassId, 0);
+            WindowNative.SetWindowSubclass(_renderHwnd, _subclassProc, _subclassId, 0);
         }
     }
 
@@ -96,14 +98,14 @@ public sealed class WindowsInputBridge : IDisposable
         if (_isDisposed || _renderHwnd == nint.Zero)
             return;
 
-        if (message == InputNative.WM_SETFOCUS)
+        if (message == WindowNative.WmSetFocus)
         {
             SetFocusAction?.Invoke(_renderHwnd);
         }
-        else if (message == InputNative.WM_ACTIVATE)
+        else if (message == WindowNative.WmActivate)
         {
             int activation = (int)(wParam.ToInt64() & 0xFFFF);
-            if (activation != InputNative.WA_INACTIVE)
+            if (activation != WindowNative.WaInactive)
             {
                 SetFocusAction?.Invoke(_renderHwnd);
             }
@@ -113,7 +115,7 @@ public sealed class WindowsInputBridge : IDisposable
     private nint SubclassWindowProc(nint hWnd, uint uMsg, nint wParam, nint lParam, nuint uIdSubclass, nuint dwRefData)
     {
         if (_isDisposed)
-            return InputNative.DefSubclassProc(hWnd, uMsg, wParam, lParam);
+            return WindowNative.DefSubclassProc(hWnd, uMsg, wParam, lParam);
 
         return ProcessNativeMessage(hWnd, uMsg, wParam, lParam, fromSubclass: true);
     }
@@ -122,7 +124,7 @@ public sealed class WindowsInputBridge : IDisposable
     {
         switch (uMsg)
         {
-            case InputNative.WM_KILLFOCUS:
+            case WindowNative.WmKillFocus:
                 if (_isComposing)
                 {
                     _isComposing = false;
@@ -137,7 +139,7 @@ public sealed class WindowsInputBridge : IDisposable
                 _lastCommittedImeString = string.Empty;
                 break;
 
-            case InputNative.WM_IME_STARTCOMPOSITION:
+            case ImmNative.WM_IME_STARTCOMPOSITION:
                 _isComposing = true;
                 _lastCommittedImeString = string.Empty;
                 Dispatch(UiInputEvent.FromTextComposition(new TextCompositionEvent(
@@ -147,11 +149,11 @@ public sealed class WindowsInputBridge : IDisposable
                     Source: InputEventSource.Synthetic)));
                 break;
 
-            case InputNative.WM_IME_COMPOSITION:
+            case ImmNative.WM_IME_COMPOSITION:
                 long compFlags = lParam.ToInt64();
-                if ((compFlags & InputNative.GCS_RESULTSTR) != 0)
+                if ((compFlags & ImmNative.GCS_RESULTSTR) != 0)
                 {
-                    string resultText = CompositionStringProvider(hWnd, InputNative.GCS_RESULTSTR);
+                    string resultText = CompositionStringProvider(hWnd, ImmNative.GCS_RESULTSTR);
                     if (!string.IsNullOrEmpty(resultText))
                     {
                         _isComposing = false;
@@ -166,9 +168,9 @@ public sealed class WindowsInputBridge : IDisposable
                         _lastCommittedImeTimestamp = Clock.GetTimestamp();
                     }
                 }
-                if ((compFlags & InputNative.GCS_COMPSTR) != 0)
+                if ((compFlags & ImmNative.GCS_COMPSTR) != 0)
                 {
-                    string compText = CompositionStringProvider(hWnd, InputNative.GCS_COMPSTR);
+                    string compText = CompositionStringProvider(hWnd, ImmNative.GCS_COMPSTR);
                     _isComposing = true;
                     Dispatch(UiInputEvent.FromTextComposition(new TextCompositionEvent(
                         NextHeader("text"),
@@ -178,7 +180,7 @@ public sealed class WindowsInputBridge : IDisposable
                 }
                 break;
 
-            case InputNative.WM_IME_ENDCOMPOSITION:
+            case ImmNative.WM_IME_ENDCOMPOSITION:
                 if (_isComposing)
                 {
                     _isComposing = false;
@@ -190,29 +192,29 @@ public sealed class WindowsInputBridge : IDisposable
                 }
                 break;
 
-            case InputNative.WM_DEADCHAR:
-            case InputNative.WM_SYSDEADCHAR:
+            case WindowNative.WmDeadChar:
+            case WindowNative.WmSysDeadChar:
                 _deadKeyActive = true;
                 break;
 
-            case InputNative.WM_CHAR:
-            case InputNative.WM_SYSCHAR:
-            case InputNative.WM_UNICHAR:
+            case WindowNative.WmChar:
+            case WindowNative.WmSysChar:
+            case WindowNative.WmUniChar:
                 char character = (char)wParam;
                 ProcessChar(character);
                 return 0; // Handled to suppress downstream duplicate processing in RenderHostWindowProc
 
-            case InputNative.WM_MOUSEHWHEEL:
+            case WindowNative.WmMouseHWheel:
                 short hRawDelta = (short)(wParam.ToInt64() >> 16);
-                double hNotches = hRawDelta / InputNative.WheelDelta;
+                double hNotches = hRawDelta / (double)WindowNative.WheelDelta;
                 BPoint hPoint = GetClientPoint(hWnd, lParam);
                 InputModifiers hModifiers = GetCurrentModifiers();
                 ProcessMouseWheel(MouseWheelAxis.Horizontal, hNotches, hPoint, hModifiers);
                 return 0;
 
-            case InputNative.WM_MOUSEWHEEL:
+            case WindowNative.WmMouseWheel:
                 short vRawDelta = (short)(wParam.ToInt64() >> 16);
-                double vNotches = vRawDelta / InputNative.WheelDelta;
+                double vNotches = vRawDelta / (double)WindowNative.WheelDelta;
                 BPoint vPoint = GetClientPoint(hWnd, lParam);
                 InputModifiers vModifiers = GetCurrentModifiers();
                 bool shiftHeld = (vModifiers & InputModifiers.Shift) != 0;
@@ -221,7 +223,7 @@ public sealed class WindowsInputBridge : IDisposable
                 return 0;
         }
 
-        return fromSubclass ? InputNative.DefSubclassProc(hWnd, uMsg, wParam, lParam) : 0;
+        return fromSubclass ? WindowNative.DefSubclassProc(hWnd, uMsg, wParam, lParam) : 0;
     }
 
     public bool ProcessTextInput(char character) => ProcessChar(character);
@@ -241,8 +243,8 @@ public sealed class WindowsInputBridge : IDisposable
         }
 
         // 2. Control chord suppression: Ctrl+Key without Alt produces ASCII control codes
-        bool ctrl = (KeyStateProvider(InputNative.VK_CONTROL) & 0x8000) != 0;
-        bool alt = (KeyStateProvider(InputNative.VK_MENU) & 0x8000) != 0;
+        bool ctrl = (KeyStateProvider(WindowNative.VkControl) & 0x8000) != 0;
+        bool alt = (KeyStateProvider(WindowNative.VkMenu) & 0x8000) != 0;
 
         if (ctrl && !alt)
         {
@@ -331,7 +333,7 @@ public sealed class WindowsInputBridge : IDisposable
     {
         short screenX = (short)(lParam.ToInt64() & 0xFFFF);
         short screenY = (short)((lParam.ToInt64() >> 16) & 0xFFFF);
-        var pt = new InputNative.POINT { X = screenX, Y = screenY };
+        var pt = new WindowNative.POINT { X = screenX, Y = screenY };
         pt = ScreenToClientAction(hWnd, pt);
         double scale = _scaleProvider();
         if (scale <= 0) scale = 1.0;
@@ -341,11 +343,11 @@ public sealed class WindowsInputBridge : IDisposable
     private InputModifiers GetCurrentModifiers()
     {
         InputModifiers mods = InputModifiers.None;
-        if ((KeyStateProvider(InputNative.VK_CONTROL) & 0x8000) != 0)
+        if ((KeyStateProvider(WindowNative.VkControl) & 0x8000) != 0)
             mods |= InputModifiers.Control;
-        if ((KeyStateProvider(InputNative.VK_SHIFT) & 0x8000) != 0)
+        if ((KeyStateProvider(WindowNative.VkShift) & 0x8000) != 0)
             mods |= InputModifiers.Shift;
-        if ((KeyStateProvider(InputNative.VK_MENU) & 0x8000) != 0)
+        if ((KeyStateProvider(WindowNative.VkMenu) & 0x8000) != 0)
             mods |= InputModifiers.Alt;
         return mods;
     }
@@ -353,11 +355,11 @@ public sealed class WindowsInputBridge : IDisposable
     private MouseButtons GetCurrentMouseButtons()
     {
         MouseButtons buttons = MouseButtons.None;
-        if ((KeyStateProvider(InputNative.VK_LBUTTON) & 0x8000) != 0)
+        if ((KeyStateProvider(WindowNative.VkLButton) & 0x8000) != 0)
             buttons |= MouseButtons.Left;
-        if ((KeyStateProvider(InputNative.VK_RBUTTON) & 0x8000) != 0)
+        if ((KeyStateProvider(WindowNative.VkRButton) & 0x8000) != 0)
             buttons |= MouseButtons.Right;
-        if ((KeyStateProvider(InputNative.VK_MBUTTON) & 0x8000) != 0)
+        if ((KeyStateProvider(WindowNative.VkMButton) & 0x8000) != 0)
             buttons |= MouseButtons.Middle;
         return buttons;
     }
@@ -367,13 +369,13 @@ public sealed class WindowsInputBridge : IDisposable
         if (hWnd == nint.Zero)
             return string.Empty;
 
-        nint hImc = InputNative.ImmGetContext(hWnd);
+        nint hImc = ImmNative.ImmGetContext(hWnd);
         if (hImc == nint.Zero)
             return string.Empty;
 
         try
         {
-            int bytes = InputNative.ImmGetCompositionString(hImc, dwIndex, nint.Zero, 0);
+            int bytes = ImmNative.ImmGetCompositionString(hImc, dwIndex, nint.Zero, 0);
             if (bytes <= 0)
                 return string.Empty;
 
@@ -382,14 +384,14 @@ public sealed class WindowsInputBridge : IDisposable
             {
                 fixed (byte* pBuf = buffer)
                 {
-                    InputNative.ImmGetCompositionString(hImc, dwIndex, (nint)pBuf, (uint)bytes);
+                    ImmNative.ImmGetCompositionString(hImc, dwIndex, (nint)pBuf, (uint)bytes);
                 }
             }
             return Encoding.Unicode.GetString(buffer).TrimEnd('\0');
         }
         finally
         {
-            InputNative.ImmReleaseContext(hWnd, hImc);
+            ImmNative.ImmReleaseContext(hWnd, hImc);
         }
     }
 
@@ -419,7 +421,7 @@ public sealed class WindowsInputBridge : IDisposable
 
         if (_renderHwnd != nint.Zero && _subclassProc != null)
         {
-            InputNative.RemoveWindowSubclass(_renderHwnd, _subclassProc, _subclassId);
+            WindowNative.RemoveWindowSubclass(_renderHwnd, _subclassProc, _subclassId);
         }
     }
 }

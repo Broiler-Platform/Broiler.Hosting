@@ -1,33 +1,7 @@
 using System;
+using Broiler.Native.Windows.Accessibility;
 
 namespace Broiler.Hosting.Windows.Accessibility;
-
-/// <summary>UIA text units. Values match the native <c>TextUnit</c> enumeration.</summary>
-public enum TextUnit
-{
-    Character = 0,
-    Format = 1,
-    Word = 2,
-    Line = 3,
-    Paragraph = 4,
-    Page = 5,
-    Document = 6,
-}
-
-/// <summary>UIA range endpoints. Values match the native <c>TextPatternRangeEndpoint</c> enumeration.</summary>
-public enum TextPatternRangeEndpoint
-{
-    Start = 0,
-    End = 1,
-}
-
-/// <summary>Values match the native <c>SupportedTextSelection</c> enumeration.</summary>
-public enum SupportedTextSelection
-{
-    None = 0,
-    Single = 1,
-    Multiple = 2,
-}
 
 /// <summary>Managed model of the UIA Text pattern, implemented by text-capable element peers.</summary>
 public interface ITextProvider

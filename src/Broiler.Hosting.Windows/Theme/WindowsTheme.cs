@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using Broiler.Graphics.Color;
+using Broiler.Native.Windows;
 using Broiler.UI;
 using Broiler.UI.Standard;
 using Microsoft.Win32;
@@ -139,15 +140,15 @@ public static class WindowsTheme
         {
             try
             {
-                var hc = new HighContrast { cbSize = (uint)Marshal.SizeOf<HighContrast>() };
-                if (SystemParametersInfoW(0x0042 /* SPI_GETHIGHCONTRAST */, hc.cbSize, ref hc, 0))
-                    highContrast = (hc.dwFlags & 1 /* HCF_HIGHCONTRASTON */) != 0;
+                var hc = new WindowNative.HIGHCONTRAST { cbSize = (uint)Marshal.SizeOf<WindowNative.HIGHCONTRAST>() };
+                if (WindowNative.SystemParametersInfo(WindowNative.SpiGetHighContrast, hc.cbSize, ref hc, 0))
+                    highContrast = (hc.dwFlags & WindowNative.HcfHighContrastOn) != 0;
             }
             catch { }
 
             try
             {
-                SystemParametersInfoBool(0x1042 /* SPI_GETCLIENTAREAANIMATION */, 0, ref animationsEnabled, 0);
+                WindowNative.SystemParametersInfo(WindowNative.SpiGetClientAreaAnimation, 0, ref animationsEnabled, 0);
             }
             catch { }
         }
@@ -160,20 +161,4 @@ public static class WindowsTheme
             ColorScheme: scheme,
             Density: UiDensity.Comfortable);
     }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct HighContrast
-    {
-        public uint cbSize;
-        public uint dwFlags;
-        public nint lpszDefaultScheme;
-    }
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SystemParametersInfoW(uint uiAction, uint uiParam, ref HighContrast pvParam, uint fWinIni);
-
-    [DllImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SystemParametersInfoBool(uint uiAction, uint uiParam, [MarshalAs(UnmanagedType.Bool)] ref bool pvParam, uint fWinIni);
 }

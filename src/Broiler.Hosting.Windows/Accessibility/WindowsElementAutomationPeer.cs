@@ -8,6 +8,7 @@ using Broiler.UI.Edit;
 using Broiler.UI.ListView;
 using Broiler.UI.ListView.Standard;
 using Broiler.UI.RichEdit;
+using Broiler.Native.Windows.Accessibility;
 using Broiler.UI.TabView;
 using Broiler.UI.TabView.Standard;
 
@@ -478,7 +479,7 @@ public sealed class WindowsElementAutomationPeer :
         {
             button.Click();
             if (UiaNative.UiaClientsAreListening())
-                UiaNative.UiaRaiseAutomationEvent(this, UiaNative.UiaInvoke_InvokedEventId);
+                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaInvoke_InvokedEventId);
         }
     }
 
@@ -581,7 +582,7 @@ public sealed class WindowsElementAutomationPeer :
             {
                 lv.SelectIndex(_itemIndex);
                 if (UiaNative.UiaClientsAreListening())
-                    UiaNative.UiaRaiseAutomationEvent(this, UiaNative.UiaSelectionItem_ElementSelectedEventId);
+                    UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
             return;
         }
@@ -593,7 +594,7 @@ public sealed class WindowsElementAutomationPeer :
             {
                 tv.SelectIndex(_tabIndex);
                 if (UiaNative.UiaClientsAreListening())
-                    UiaNative.UiaRaiseAutomationEvent(this, UiaNative.UiaSelectionItem_ElementSelectedEventId);
+                    UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
             return;
         }
