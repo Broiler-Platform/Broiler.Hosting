@@ -114,6 +114,35 @@ public sealed class AutomationFocusTests
         Assert.Same(bridge, bridge.FocusTarget());
     }
 
+    [Fact]
+    public void AListReachedOnlyThroughTheFocusStillReportsItsSelectionMoving()
+    {
+        var (session, bridge, root) = Create();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        root.AddChild(list);
+        list.SelectIndex(0);
+        var raised = Listen(bridge);
+
+        // A focus-tracking client, such as Magnifier, learns of the list only from the focus event on its row.
+        session.SetFocus(list);
+        Assert.Contains((bridge.GetOrCreateItemPeer(list, 0), UiaNative.UiaAutomationFocusChangedEventId), raised);
+
+        list.SelectIndex(1);
+        var bravo = bridge.GetOrCreateItemPeer(list, 1);
+        Assert.Contains((bravo, UiaNative.UiaSelectionItem_ElementSelectedEventId), raised);
+        Assert.Contains((bravo, UiaNative.UiaAutomationFocusChangedEventId), raised);
+    }
+
+    // Pins "a client listens", which UIA answers for the whole machine, and collects the events raised.
+    private static List<(IRawElementProviderSimple Target, int EventId)> Listen(WindowsAutomationBridge bridge)
+    {
+        var raised = new List<(IRawElementProviderSimple, int)>();
+        bridge.ClientsListening = () => true;
+        bridge.EventRaised += (target, eventId) => raised.Add((target, eventId));
+        return raised;
+    }
+
     // Whether a UIA client is listening is machine-wide; collect what the bridge raised and what is still pending.
     private static List<WindowsAutomationBridge.AutomationChange> Observe(
         WindowsAutomationBridge bridge, UiElement element, WindowsElementAutomationPeer peer, Action change)

@@ -240,12 +240,16 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         return TabPeer(tabView, tabView.Tabs[index].Id);
     }
 
+    // A row, tab or tree row peer also makes its container's peer: the container's snapshot is what its
+    // selection changes are compared with, so a client that reached a row only through a focus event
+    // still hears when the selection, and with it the focus, moves on.
     internal WindowsElementAutomationPeer ItemPeer(UiListView listView, string itemId)
     {
         var key = (listView.SemanticId, itemId);
         if (_itemPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
+        GetOrCreatePeer(listView);
         var peer = new WindowsElementAutomationPeer(this, listView, itemId);
         _itemPeers[key] = peer;
         return peer;
@@ -257,6 +261,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         if (_tabPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
+        GetOrCreatePeer(tabView);
         var peer = new WindowsElementAutomationPeer(this, tabView, tabId);
         _tabPeers[key] = peer;
         return peer;
@@ -268,6 +273,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         if (_treeRowPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
+        GetOrCreatePeer(treeView);
         var peer = new WindowsElementAutomationPeer(this, treeView, node);
         _treeRowPeers[key] = peer;
         return peer;
