@@ -283,6 +283,7 @@ public sealed partial class WindowsElementAutomationPeer :
             AutomationInterop.ControllerForPropertyId => Related(element, element.Controls),
             AutomationInterop.DescribedByPropertyId => Related(element, ShownErrorMessage(element), element.DescribedBy),
             AutomationInterop.FullDescriptionPropertyId => string.IsNullOrWhiteSpace(semantic.Description) ? null : semantic.Description,
+            AutomationInterop.IsDialogPropertyId => semantic.Role == UiSemanticRole.Dialog,
             _ => null,
         };
     }
@@ -930,7 +931,9 @@ public sealed partial class WindowsElementAutomationPeer :
         UiSemanticRole.ScrollView => UiaNative.UiaPaneControlTypeId,
         UiSemanticRole.Toolbar => UiaNative.UiaToolBarControlTypeId,
         UiSemanticRole.Tooltip => UiaNative.UiaToolTipControlTypeId,
-        UiSemanticRole.Window or UiSemanticRole.Dialog => AutomationInterop.WindowControlTypeId,
+        // Inside the surface a window or dialog is a pane: the Window control type requires the Window and
+        // Transform patterns, which only the host window offers. A dialog says so through IsDialog.
+        UiSemanticRole.Window or UiSemanticRole.Dialog => UiaNative.UiaPaneControlTypeId,
         UiSemanticRole.Hyperlink => UiaNative.UiaHyperlinkControlTypeId,
         UiSemanticRole.ImageView => UiaNative.UiaImageControlTypeId,
         UiSemanticRole.StatusAnnouncement => UiaNative.UiaStatusBarControlTypeId,

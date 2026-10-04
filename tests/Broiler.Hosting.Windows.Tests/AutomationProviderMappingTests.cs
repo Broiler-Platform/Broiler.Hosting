@@ -92,7 +92,10 @@ public sealed class AutomationProviderMappingTests
         Assert.Null(bridge.GetOrCreateItemPeer(list, 0).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
         Assert.Equal(UiaNative.UiaPaneControlTypeId, bridge.GetOrCreatePeer(scroll).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
         Assert.Null(bridge.GetOrCreatePeer(scroll).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));
-        Assert.Equal(AutomationInterop.WindowControlTypeId, bridge.GetOrCreatePeer(dialog).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        // A dialog drawn in the surface is a pane that says it is a dialog; Window needs patterns only a host window has.
+        Assert.Equal(UiaNative.UiaPaneControlTypeId, bridge.GetOrCreatePeer(dialog).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
+        Assert.Equal(true, bridge.GetOrCreatePeer(dialog).GetPropertyValue(AutomationInterop.IsDialogPropertyId));
+        Assert.Equal(false, bridge.GetOrCreatePeer(scroll).GetPropertyValue(AutomationInterop.IsDialogPropertyId));
         // A role UIA has no type for is custom, and says what it is in words.
         Assert.Equal(UiaNative.UiaCustomControlTypeId, bridge.GetOrCreatePeer(code).GetPropertyValue(UiaNative.UiaControlTypePropertyId));
         Assert.Equal("code editor", bridge.GetOrCreatePeer(code).GetPropertyValue(UiaNative.UiaLocalizedControlTypePropertyId));

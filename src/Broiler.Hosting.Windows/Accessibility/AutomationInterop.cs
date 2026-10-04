@@ -14,7 +14,6 @@ internal static partial class AutomationInterop
 
     public const int TreeControlTypeId = 50023;
     public const int TreeItemControlTypeId = 50024;
-    public const int WindowControlTypeId = 50032;
 
     // Property IDs for form semantics (Broiler.UI ADR 0028).
     public const int IsRequiredForFormPropertyId = 30025;
@@ -22,6 +21,9 @@ internal static partial class AutomationInterop
     public const int ControllerForPropertyId = 30104;
     public const int DescribedByPropertyId = 30105;
     public const int FullDescriptionPropertyId = 30159;
+
+    /// <summary>UIA_IsDialogPropertyId (Windows 10 1809): the element is a dialog, which Narrator reads as one.</summary>
+    public const int IsDialogPropertyId = 30174;
 
     /// <summary>UIA_E_ELEMENTNOTENABLED: the element is disabled, so the action is refused.</summary>
     public const int ElementNotEnabled = unchecked((int)0x80040200);
