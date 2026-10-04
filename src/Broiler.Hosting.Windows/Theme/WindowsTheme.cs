@@ -35,17 +35,25 @@ public static class WindowsTheme
 
     /// <summary>
     /// Builds a high-contrast palette from system colors. Text, borders, and surfaces use the window
-    /// colors; the accent uses the highlight pair. The focus ring uses the highlight color only when it
+    /// colors; the accent and the selection use the highlight pair, so selected rows and selected text
+    /// are drawn in the highlight text color. The focus ring uses the highlight color only when it
     /// stands out from the window background (3:1), and falls back to the window text color otherwise.
-    /// Status colors that Windows does not define keep the high-contrast preset values.
+    /// Status colors that Windows does not define keep the high-contrast preset values where they are
+    /// readable on the window background (4.5:1), and fall back to the window text color otherwise;
+    /// the link color does the same with the system hyperlink color. The palette is flagged as high
+    /// contrast, and the settings' reduced motion, density, and text scale are applied.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="colors"/> need not be the current system colors: pass one of the Windows 11
+    /// contrast themes (<see cref="WindowsSystemColors.Aquatic"/> and the others), or any colors a user
+    /// could choose, to build the palette that theme gives without changing the system's settings.
+    /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
     {
         bool dark = RelativeLuminance(colors.Window) < RelativeLuminance(colors.WindowText);
         var preset = dark ? StandardThemeTokens.HighContrastDark : StandardThemeTokens.HighContrastLight;
         var focus = ContrastRatio(colors.Highlight, colors.Window) >= 3 ? colors.Highlight : colors.WindowText;
-        var link = ContrastRatio(colors.HotLight, colors.Window) >= 4.5 ? colors.HotLight : colors.WindowText;
-        return preset with
+        var tokens = preset with
         {
             Name = "HighContrastSystem",
             IsDark = dark,
@@ -63,12 +71,26 @@ public static class WindowsTheme
             AccentPressed = colors.Highlight,
             AccentSoft = colors.Highlight,
             OnAccent = colors.HighlightText,
+            // Windows pairs Highlight with HighlightText and has no muted variant of it.
+            SelectionText = colors.HighlightText,
+            SelectionTextMuted = colors.HighlightText,
             FocusRing = focus,
-            Info = link,
+            Success = ReadableOnWindow(preset.Success, colors),
+            Warning = ReadableOnWindow(preset.Warning, colors),
+            Danger = ReadableOnWindow(preset.Danger, colors),
+            Info = ReadableOnWindow(colors.HotLight, colors),
+            IsHighContrast = true,
             ReducedMotion = settings?.ReducedMotion ?? preset.ReducedMotion,
             Density = settings?.Density ?? preset.Density,
         };
+        // The same guard StandardThemeTokens.Select uses: a scale that is not a positive number means unscaled.
+        double scale = settings?.TextScale ?? 1.0;
+        return tokens.WithTextScale(double.IsFinite(scale) && scale > 0 ? scale : 1.0);
     }
+
+    /// <summary>The color, when text in it reads on the window background (4.5:1); the window text color otherwise.</summary>
+    private static BColor ReadableOnWindow(BColor color, WindowsSystemColors colors) =>
+        ContrastRatio(color, colors.Window) >= 4.5 ? color : colors.WindowText;
 
     /// <summary>
     /// Converts the Windows "Make text bigger" registry value (a percentage) to a scale factor.

@@ -80,11 +80,58 @@ public sealed class WindowsThemeTests
         Assert.Equal(tokens.Text, tokens.TextMuted);
         Assert.Equal(colors.Highlight, tokens.Accent);
         Assert.Equal(colors.HighlightText, tokens.OnAccent);
+        Assert.Equal(colors.Highlight, tokens.AccentSoft);
+        Assert.Equal(colors.HighlightText, tokens.SelectionText);
+        Assert.Equal(colors.HighlightText, tokens.SelectionTextMuted);
+        Assert.True(tokens.IsHighContrast);
         Assert.True(tokens.ReducedMotion);
         Assert.True(WindowsTheme.ContrastRatio(tokens.Text, tokens.Surface) >= 4.5, $"{name}: text");
         Assert.True(WindowsTheme.ContrastRatio(tokens.OnAccent, tokens.Accent) >= 4.5, $"{name}: accent");
         Assert.True(WindowsTheme.ContrastRatio(tokens.FocusRing, tokens.Surface) >= 3, $"{name}: focus ring");
         Assert.True(WindowsTheme.ContrastRatio(tokens.Info, tokens.Surface) >= 4.5, $"{name}: link");
+    }
+
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    public void Every_Color_Pair_Controls_Draw_Is_Readable_In_The_Windows_Contrast_Themes(string name, uint[] rgb, bool dark)
+    {
+        var tokens = WindowsTheme.CreateHighContrastTheme(Colors(rgb));
+        Assert.Equal(dark, tokens.IsDark);
+
+        // Text: 4.5:1 (WCAG AA for normal text) on the background it is drawn on.
+        foreach (var (role, color) in new[] { ("text", tokens.Text), ("muted text", tokens.TextMuted),
+            ("success", tokens.Success), ("warning", tokens.Warning), ("danger", tokens.Danger), ("link", tokens.Info) })
+        {
+            AssertContrast(color, tokens.Surface, 4.5, $"{name}: {role} on the window");
+            AssertContrast(color, tokens.SurfaceAlt, 4.5, $"{name}: {role} on the alternate surface");
+        }
+        // A selected row or selected text, and a primary button's label.
+        AssertContrast(tokens.SelectionText, tokens.AccentSoft, 4.5, $"{name}: selected text on the selection");
+        AssertContrast(tokens.SelectionTextMuted, tokens.AccentSoft, 4.5, $"{name}: selected muted text on the selection");
+        AssertContrast(tokens.OnAccent, tokens.Accent, 4.5, $"{name}: text on the accent");
+        // Non-text: 3:1 (WCAG 1.4.11) for the focus ring and control borders.
+        AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
+        AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
+    }
+
+    [Fact]
+    public void A_Status_Color_That_Blends_Into_The_Window_Falls_Back_To_The_Window_Text()
+    {
+        // Dusk's window is a dark gray, and the dark preset's danger red reaches only 4.4:1 on it.
+        var dusk = WindowsTheme.CreateHighContrastTheme(WindowsSystemColors.Dusk);
+        Assert.True(WindowsTheme.ContrastRatio(StandardThemeTokens.HighContrastDark.Danger, WindowsSystemColors.Dusk.Window) < 4.5);
+        Assert.Equal(WindowsSystemColors.Dusk.WindowText, dusk.Danger);
+        Assert.Equal(StandardThemeTokens.HighContrastDark.Success, dusk.Success);
+        Assert.Equal(StandardThemeTokens.HighContrastDark.Warning, dusk.Warning);
+
+        // On Night sky's black it is readable, so the hue stays.
+        var nightSky = WindowsTheme.CreateHighContrastTheme(WindowsSystemColors.NightSky);
+        Assert.Equal(StandardThemeTokens.HighContrastDark.Danger, nightSky.Danger);
+
+        // Every status color falls back on a window none of them reads on.
+        var gray = Colors([0x808080, 0x000000, 0x000000, 0xFFFFFF, 0x808080, 0x000000, 0x404040, 0x000000]);
+        var tokens = WindowsTheme.CreateHighContrastTheme(gray);
+        Assert.Equal(new[] { gray.WindowText, gray.WindowText, gray.WindowText }, new[] { tokens.Success, tokens.Warning, tokens.Danger });
     }
 
     [Fact]
@@ -94,6 +141,38 @@ public sealed class WindowsThemeTests
         var tokens = WindowsTheme.CreateHighContrastTheme(colors);
         Assert.Equal(colors.WindowText, tokens.FocusRing);
         Assert.Equal(colors.WindowText, tokens.Info);
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.25)]
+    public void The_High_Contrast_Palette_Takes_The_Text_Scale(double scale)
+    {
+        var settings = UiSystemSettings.Default with { ContrastPreference = UiContrastPreference.More, TextScale = scale };
+        var tokens = WindowsTheme.CreateHighContrastTheme(WindowsSystemColors.Aquatic, settings);
+        var expected = StandardThemeTokens.HighContrastDark.WithTextScale(scale);
+
+        Assert.Equal(scale, tokens.TextScale);
+        Assert.Equal(expected.FontBody, tokens.FontBody);
+        Assert.Equal(expected.FontTitle, tokens.FontTitle);
+        Assert.Equal(expected.FontSubtitle, tokens.FontSubtitle);
+        Assert.Equal(expected.FontCaption, tokens.FontCaption);
+        Assert.Equal(expected.FontCode, tokens.FontCode);
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    public void A_Text_Scale_That_Is_Not_A_Positive_Number_Leaves_The_Palette_Unscaled(double scale)
+    {
+        var settings = UiSystemSettings.Default with { TextScale = scale };
+        var tokens = WindowsTheme.CreateHighContrastTheme(WindowsSystemColors.Desert, settings);
+        Assert.Equal(1.0, tokens.TextScale);
+        Assert.Equal(StandardThemeTokens.HighContrastLight.FontBody, tokens.FontBody);
+        Assert.Equal(1.0, WindowsTheme.CreateHighContrastTheme(WindowsSystemColors.Desert).TextScale);
     }
 
     [Fact]
@@ -117,6 +196,30 @@ public sealed class WindowsThemeTests
             Assert.Equal(colors.Window, tokens.Surface);
         }
         else Assert.Equal(StandardThemeTokens.Select(high), tokens);
+    }
+
+    [Fact]
+    public void Resolve_Applies_Every_Setting_In_High_Contrast()
+    {
+        var high = UiSystemSettings.Default with
+        {
+            ContrastPreference = UiContrastPreference.More,
+            TextScale = 2.0,
+            ReducedMotion = true,
+            Density = UiDensity.Compact,
+        };
+        var tokens = WindowsTheme.ResolveTheme(high);
+
+        Assert.True(tokens.IsHighContrast);
+        Assert.Equal(2.0, tokens.TextScale);
+        Assert.True(tokens.ReducedMotion);
+        Assert.Equal(UiDensity.Compact, tokens.Density);
+    }
+
+    private static void AssertContrast(BColor foreground, BColor background, double minimum, string what)
+    {
+        double ratio = WindowsTheme.ContrastRatio(foreground, background);
+        Assert.True(ratio >= minimum, $"{what}: {ratio:0.00}:1, needs {minimum}:1");
     }
 
     [Fact]
