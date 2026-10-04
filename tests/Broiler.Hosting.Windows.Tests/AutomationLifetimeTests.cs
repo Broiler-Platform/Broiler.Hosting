@@ -153,7 +153,7 @@ public sealed class AutomationLifetimeTests
     [Fact]
     public void AfterTheWindowIsDestroyedHeldElementsFailAtOnceAsNotAvailable()
     {
-        using var window = new AutomationWindowHarness(root => root.AddChild(new StandardButton { Text = "Send" }));
+        using var window = new AutomationWindowHarness(root => root.AddChild(new StandardButton { Text = "Send" }), disposeBridgeOnExit: false);
         var peer = window.Invoke(() => window.Bridge.GetOrCreatePeer(window.Root.Children[0]));
         INativeSimple element = Native(peer);
         var rootFragment = (INativeFragment)Native(window.Bridge);
@@ -170,7 +170,8 @@ public sealed class AutomationLifetimeTests
     [Fact]
     public void DestroyingTheWindowReleasesItsProviders()
     {
-        using var window = new AutomationWindowHarness(root => root.AddChild(new StandardButton { Text = "Send" }));
+        // The bridge is left undisposed: WM_DESTROY alone must disconnect and release the providers.
+        using var window = new AutomationWindowHarness(root => root.AddChild(new StandardButton { Text = "Send" }), disposeBridgeOnExit: false);
         var disconnected = new ConcurrentBag<IRawElementProviderSimple>();
         var peer = window.Invoke(() =>
         {

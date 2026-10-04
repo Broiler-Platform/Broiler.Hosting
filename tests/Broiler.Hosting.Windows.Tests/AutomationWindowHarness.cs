@@ -14,6 +14,11 @@ namespace Broiler.Hosting.Windows.Tests;
 /// A real, hidden window on its own STA thread with a message loop, a queued dispatcher drained by a
 /// posted message (as Broiler.Mail's windows do), and an automation bridge attached to it.
 /// </summary>
+/// <remarks>
+/// The bridge is disposed once the message loop ends, as an application would on closing. A test of
+/// what destroying the window does itself passes <c>disposeBridgeOnExit: false</c>, so nothing but
+/// <c>WM_DESTROY</c> can have torn the bridge down.
+/// </remarks>
 internal sealed class AutomationWindowHarness : IDisposable
 {
     private const uint DrainMessage = 0x8000 + 0x42; // WM_APP + n
@@ -22,9 +27,9 @@ internal sealed class AutomationWindowHarness : IDisposable
     private StandardQueuedUiDispatcher _dispatcher = null!;
     private Exception? _startupError;
 
-    public AutomationWindowHarness(Action<StandardPanel>? build = null)
+    public AutomationWindowHarness(Action<StandardPanel>? build = null, bool disposeBridgeOnExit = true)
     {
-        _thread = new Thread(() => Run(build)) { IsBackground = true, Name = "Automation test window" };
+        _thread = new Thread(() => Run(build, disposeBridgeOnExit)) { IsBackground = true, Name = "Automation test window" };
         _thread.SetApartmentState(ApartmentState.STA);
         _thread.Start();
         if (!_ready.Wait(TimeSpan.FromSeconds(10)))
@@ -69,7 +74,7 @@ internal sealed class AutomationWindowHarness : IDisposable
         return true;
     });
 
-    private void Run(Action<StandardPanel>? build)
+    private void Run(Action<StandardPanel>? build, bool disposeBridgeOnExit)
     {
         try
         {
@@ -104,7 +109,8 @@ internal sealed class AutomationWindowHarness : IDisposable
             WindowNative.DispatchMessage(ref message);
         }
 
-        Bridge.Dispose();
+        if (disposeBridgeOnExit)
+            Bridge.Dispose();
         Session.Dispose();
     }
 
