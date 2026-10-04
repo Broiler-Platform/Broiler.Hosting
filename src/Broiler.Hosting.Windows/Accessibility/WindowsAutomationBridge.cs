@@ -311,10 +311,12 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
         switch (e.Change)
         {
-            case UiSemanticChangeKind.FocusChanged when e.Element is not null:
-                WindowsElementAutomationPeer focusedPeer = GetOrCreatePeer(e.Element);
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(focusedPeer)!, UiaNative.UiaAutomationFocusChangedEventId);
-                RaisePropertyChanged(focusedPeer, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
+            // The event names what now has the focus, as GetFocus does: the selected row of a focused list
+            // rather than the list, and the root when focus went nowhere, never the element that lost it.
+            case UiSemanticChangeKind.FocusChanged:
+                IRawElementProviderSimple focusedProvider = FocusTarget();
+                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(focusedProvider)!, UiaNative.UiaAutomationFocusChangedEventId);
+                RaisePropertyChanged(focusedProvider, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
                 break;
 
             case UiSemanticChangeKind.StatusAnnounced:
@@ -484,7 +486,12 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 _ => null,
             };
             if (selected is not null)
+            {
                 changes.Add(new(selected, UiaNative.UiaSelectionItem_ElementSelectedEventId, false));
+                // In a focused container the focus moves with the selection, as GetFocus reports it.
+                if (ReferenceEquals(_session.FocusedElement, element) && ReferenceEquals(FocusTarget(), selected))
+                    changes.Add(new(selected, UiaNative.UiaAutomationFocusChangedEventId, false));
+            }
         }
 
         if (element is UiTreeView changedTree)
@@ -558,6 +565,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     // --- IRawElementProviderSimple ---
 
+    // ProviderOwnsSetFocus is not declared, here or on the peers: every element lives in this window,
+    // so UIA giving the window the Win32 focus before it calls SetFocus is what lets the session's
+    // focused element receive the keys, as Win32 and WinUI controls hosted in one window rely on.
     public ProviderOptions ProviderOptions =>
         ProviderOptions.ServerSideProvider | ProviderOptions.UseComThreading;
 
@@ -717,7 +727,14 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         return null;
     }
 
-    public IRawElementProviderFragment? GetFocus()
+    public IRawElementProviderFragment? GetFocus() => FocusTarget();
+
+    /// <summary>
+    /// The provider that has the keyboard focus: the selected row or tab of a focused list, tab view
+    /// or tree, which have no focus apart from their selection, or the focused element; the root when
+    /// nothing has the focus. Focus events go to the same provider.
+    /// </summary>
+    internal IRawElementProviderFragment FocusTarget()
     {
         UiElement? focused = _session.FocusedElement;
         if (focused is null) return this;

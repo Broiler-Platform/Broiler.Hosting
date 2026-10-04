@@ -381,44 +381,20 @@ public sealed partial class WindowsElementAutomationPeer :
 
     public IRawElementProviderSimple[]? GetEmbeddedFragmentRoots() => null;
 
+    /// <summary>
+    /// Moves keyboard focus here without changing the selection. A list row, tab or tree row has no
+    /// focus of its own in Broiler.UI, so its container takes the focus; the focused item stays the
+    /// selected one. Selecting is <see cref="Select"/>'s job, which UIA clients call after SetFocus: a
+    /// focus call that also selected would run the application's selection handler first and then take
+    /// the focus back from wherever that handler put it.
+    /// </summary>
     public void SetFocus()
     {
         if (!IsAlive) return;
 
-        if (IsTreeItem)
-        {
-            // A tree has no focus apart from its selection that UIA could set; the tree takes the focus.
-            if (TreeView is { CanFocus: true } tree) _bridge.Session.SetFocus(tree);
-            return;
-        }
-
-        if (IsItem)
-        {
-            UiListView? lv = ListView;
-            if (lv is not null)
-            {
-                lv.SelectIndex(ItemIndex);
-                _bridge.Session.SetFocus(lv);
-            }
-            return;
-        }
-
-        if (IsTab)
-        {
-            UiTabView? tv = TabView;
-            if (tv is not null)
-            {
-                tv.SelectIndex(TabIndex);
-                _bridge.Session.SetFocus(tv);
-            }
-            return;
-        }
-
-        UiElement? el = Element;
-        if (el is not null && el.CanFocus)
-        {
-            _bridge.Session.SetFocus(el);
-        }
+        UiElement? target = IsTreeItem ? TreeView : IsItem ? ListView : IsTab ? TabView : Element;
+        if (target is { CanFocus: true })
+            _bridge.Session.SetFocus(target);
     }
 
     public IRawElementProviderFragment? Navigate(NavigateDirection direction)
@@ -708,12 +684,17 @@ public sealed partial class WindowsElementAutomationPeer :
         }
     }
 
+    /// <summary>
+    /// Selects this item as a click on it does. A list row or tab focuses its container first and then
+    /// selects, so whatever the application does with the focus when the selection changes (Broiler.Mail
+    /// returns to the reader when the Inbox tab is chosen) stands, as it does for the pointer. A tree
+    /// row is selected without moving the focus, which is what a click on it does.
+    /// </summary>
     public void Select()
     {
         if (!IsAlive) return;
         if (IsTreeItem)
         {
-            // As a click on the row does: just this row, without moving the focus.
             TreeView!.SetSelection([_treeNode!.Value]);
             return;
         }
@@ -723,7 +704,9 @@ public sealed partial class WindowsElementAutomationPeer :
             int index = ItemIndex;
             if (lv is not null && index >= 0)
             {
+                if (lv.CanFocus) _bridge.Session.SetFocus(lv);
                 lv.SelectIndex(index);
+                lv.ScrollIntoView(_itemId!);
                 if (UiaNative.UiaClientsAreListening())
                     UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
@@ -736,6 +719,7 @@ public sealed partial class WindowsElementAutomationPeer :
             int index = TabIndex;
             if (tv is not null && index >= 0)
             {
+                if (tv.CanFocus) _bridge.Session.SetFocus(tv);
                 tv.SelectIndex(index);
                 if (UiaNative.UiaClientsAreListening())
                     UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(this)!, UiaNative.UiaSelectionItem_ElementSelectedEventId);
