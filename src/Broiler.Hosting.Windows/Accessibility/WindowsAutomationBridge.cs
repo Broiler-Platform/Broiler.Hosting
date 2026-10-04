@@ -655,6 +655,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
         UiaNative.UiaIsEnabledPropertyId => true,
         UiaNative.UiaIsKeyboardFocusablePropertyId => true,
+        // UIA reads either property left unanswered as false, which would call the window's pane invalid.
+        AutomationInterop.IsRequiredForFormPropertyId => _root.GetSemanticNode().State.HasFlag(UiSemanticState.Required),
+        AutomationInterop.IsDataValidForFormPropertyId => !_root.GetSemanticNode().State.HasFlag(UiSemanticState.Invalid),
         _ => null,
     };
 

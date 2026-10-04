@@ -225,6 +225,8 @@ public sealed partial class WindowsElementAutomationPeer :
                 UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
                 UiaNative.UiaItemStatusPropertyId => item.IsRead == false ? "Unread" : "Read",
+                AutomationInterop.IsRequiredForFormPropertyId => ItemState(lv, index).HasFlag(UiSemanticState.Required),
+                AutomationInterop.IsDataValidForFormPropertyId => !ItemState(lv, index).HasFlag(UiSemanticState.Invalid),
                 _ => null,
             };
         }
@@ -246,6 +248,8 @@ public sealed partial class WindowsElementAutomationPeer :
                 UiaNative.UiaHasKeyboardFocusPropertyId => tv.SelectedIndex == index && _bridge.Session.FocusedElement == tv,
                 UiaNative.UiaIsOffscreenPropertyId => VisibleBounds.IsEmpty,
                 UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
+                AutomationInterop.IsRequiredForFormPropertyId => TabState(tv, index).HasFlag(UiSemanticState.Required),
+                AutomationInterop.IsDataValidForFormPropertyId => !TabState(tv, index).HasFlag(UiSemanticState.Invalid),
                 _ => null,
             };
         }
@@ -297,6 +301,15 @@ public sealed partial class WindowsElementAutomationPeer :
     /// </summary>
     private static bool CanHoldFocus(UiElement container, bool isCurrentItem) =>
         isCurrentItem && AutomationExposure.IsKeyboardFocusable(container);
+
+    // A row, tab or tree row answers IsDataValidForForm and IsRequiredForForm from the state of the node
+    // its container describes it with: valid and not required unless that node says otherwise. UIA reads
+    // a property left unanswered as false, so a client would hear every row and tab called invalid.
+    private static UiSemanticState ItemState(UiListView listView, int index) =>
+        listView.GetItemSemanticNode(index)?.State ?? UiSemanticState.None;
+
+    private static UiSemanticState TabState(UiTabView tabView, int index) =>
+        tabView.GetSemanticNode().Children is { } tabs && index < tabs.Count ? tabs[index].State : UiSemanticState.None;
 
     // The peers of the related elements a client can go to, in order, or none.
     private IRawElementProviderSimple[]? Related(UiElement element, params UiElement?[] related)
