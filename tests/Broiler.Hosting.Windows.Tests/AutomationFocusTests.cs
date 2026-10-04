@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Broiler.Graphics.Geometry;
 using Broiler.Graphics.RenderList;
 using Broiler.Hosting.Windows.Accessibility;
@@ -183,6 +184,35 @@ public sealed class AutomationFocusTests
         Assert.Contains((bravo, UiaNative.UiaSelectionItem_ElementSelectedEventId), raised);
         Assert.Contains((bravo, UiaNative.UiaAutomationFocusChangedEventId), raised);
     }
+
+    [Fact]
+    public void SelectRaisesElementSelectedOnceAsAClickDoes()
+    {
+        var (_, bridge, root) = Create();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        var tabs = new StandardTabView();
+        tabs.AddTab("inbox", "Inbox");
+        tabs.AddTab("compose", "Compose");
+        root.AddChild(list);
+        root.AddChild(tabs);
+        var raised = Listen(bridge);
+        var bravo = bridge.GetOrCreateItemPeer(list, 1);
+        var compose = bridge.GetOrCreateTabPeer(tabs, 1);
+
+        Select(bravo);
+        Select(compose);
+        Assert.Equal([bravo, compose], raised.Where(e => e.EventId == UiaNative.UiaSelectionItem_ElementSelectedEventId).Select(e => e.Target));
+
+        // Selecting what is already selected changes nothing, and says nothing.
+        raised.Clear();
+        Select(bravo);
+        Select(compose);
+        Assert.DoesNotContain(raised, e => e.EventId == UiaNative.UiaSelectionItem_ElementSelectedEventId);
+    }
+
+    private static void Select(WindowsElementAutomationPeer peer) =>
+        Assert.IsAssignableFrom<ISelectionItemProvider>(peer.GetPatternProvider(UiaNative.UiaSelectionItemPatternId)).Select();
 
     // Pins "a client listens", which UIA answers for the whole machine, and collects the events raised.
     private static List<(IRawElementProviderSimple Target, int EventId)> Listen(WindowsAutomationBridge bridge)

@@ -701,6 +701,8 @@ public sealed partial class WindowsElementAutomationPeer :
     /// row is selected without moving the focus, which is what a click on it does.
     /// </summary>
     /// <remarks>
+    /// ElementSelected comes from change detection on the container, once, as for a click; a row that is
+    /// already selected raises none.
     /// This departs from Win32 and WinUI, whose list and tab item providers select without moving the
     /// keyboard focus, and whose list items can hold the focus unselected. Broiler.UI has no focused but
     /// unselected row or tab, and the pointer's order (focus, then select) is the one applications
@@ -724,8 +726,6 @@ public sealed partial class WindowsElementAutomationPeer :
                 if (lv.CanFocus) _bridge.Session.SetFocus(lv);
                 lv.SelectIndex(index);
                 lv.ScrollIntoView(_itemId!);
-                if (_bridge.ClientsListening())
-                    _bridge.RaiseEvent(this, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
             return;
         }
@@ -738,8 +738,6 @@ public sealed partial class WindowsElementAutomationPeer :
             {
                 if (tv.CanFocus) _bridge.Session.SetFocus(tv);
                 tv.SelectIndex(index);
-                if (_bridge.ClientsListening())
-                    _bridge.RaiseEvent(this, UiaNative.UiaSelectionItem_ElementSelectedEventId);
             }
             return;
         }
