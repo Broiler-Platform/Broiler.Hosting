@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Broiler.Graphics.Geometry;
 using Broiler.Native.Windows;
 using Broiler.Native.Windows.Accessibility;
 using Broiler.UI;
 using Broiler.UI.ListView;
+using Broiler.UI.ListView.Standard;
 using Broiler.UI.TabView;
-using Broiler.UI.TabView.Standard;
+using Broiler.UI.TreeView;
+using Broiler.UI.TreeView.Standard;
 
 namespace Broiler.Hosting.Windows.Accessibility;
 
@@ -32,21 +35,45 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private readonly Func<double> _scaleProvider;
 
     private readonly Dictionary<long, WindowsElementAutomationPeer> _elementPeers = new();
-    private readonly Dictionary<(long ListViewId, int Index), WindowsElementAutomationPeer> _itemPeers = new();
-    private readonly Dictionary<(long TabViewId, int Index), WindowsElementAutomationPeer> _tabPeers = new();
+    // Items and tabs are keyed by their id, not their index, so a peer and its runtime ID follow the
+    // item when rows are inserted above it, and never come to stand for another item.
+    private readonly Dictionary<(long ListViewId, string ItemId), WindowsElementAutomationPeer> _itemPeers = new();
+    private readonly Dictionary<(long TabViewId, string TabId), WindowsElementAutomationPeer> _tabPeers = new();
+    private readonly Dictionary<(long TreeViewId, string NodeId), WindowsElementAutomationPeer> _treeRowPeers = new();
     private readonly Dictionary<long, AutomationSnapshot> _snapshots = new();
+    // An element keeps its runtime ID for its lifetime, even when its peer is dropped and made again.
+    private readonly ConditionalWeakTable<UiElement, StrongBox<int>> _elementRuntimeIds = new();
+    private readonly int _rootRuntimeId;
+    private int _lastRuntimeId;
 
-    private bool _isDisposed;
+    private volatile bool _isDisposed;
+    private volatile bool _windowDestroyed;
+    private bool _isSubclassed;
+    private bool _providersReleased;
     private readonly int _uiThread = Environment.CurrentManagedThreadId;
+
+    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
+    private const int WindowPollMilliseconds = 25;
+
+    /// <summary>
+    /// True once the bridge is disposed or its window has been destroyed. Every provider call then fails
+    /// with UIA_E_ELEMENTNOTAVAILABLE instead of reading state that is being torn down.
+    /// </summary>
+    internal bool IsTornDown => _isDisposed || _windowDestroyed;
+
+    // A window that is gone drains nothing more, so a call posted to it would only wait for the timeout.
+    private bool CanReachUiThread => !IsTornDown && (_hwnd == nint.Zero || HwndNative.IsWindow(_hwnd));
 
     internal T OnUiThread<T>(Func<T> operation)
     {
         T Run()
         {
-            if (_isDisposed) throw new System.Runtime.InteropServices.COMException("Element is no longer available.", unchecked((int)0x80040201));
+            if (IsTornDown) throw AutomationInterop.ElementNotAvailableException();
             return operation();
         }
         if (Environment.CurrentManagedThreadId == _uiThread) return Run();
+        if (!CanReachUiThread) throw AutomationInterop.ElementNotAvailableException();
+
         var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         int started = 0;
         _session.Dispatcher.Post(() =>
@@ -55,7 +82,18 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             try { completion.TrySetResult(Run()); }
             catch (Exception error) { completion.TrySetException(error); }
         });
-        try { return completion.Task.WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult(); }
+        try
+        {
+            // The wait is sliced so that a window destroyed meanwhile ends it at once.
+            long deadline = Environment.TickCount64 + (long)CallTimeout.TotalMilliseconds;
+            WaitHandle pending = ((IAsyncResult)completion.Task).AsyncWaitHandle;
+            while (!pending.WaitOne(WindowPollMilliseconds))
+            {
+                if (!CanReachUiThread) throw AutomationInterop.ElementNotAvailableException();
+                if (Environment.TickCount64 >= deadline) throw new TimeoutException("The UI thread did not answer the automation call in time.");
+            }
+            return completion.Task.GetAwaiter().GetResult();
+        }
         finally { Interlocked.CompareExchange(ref started, 2, 0); }
     }
 
@@ -65,6 +103,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _session = session ?? throw new ArgumentNullException(nameof(session));
         _root = root ?? throw new ArgumentNullException(nameof(root));
         _scaleProvider = scaleProvider ?? (() => 1.0);
+        _rootRuntimeId = AllocateRuntimeId();
 
         _session.SemanticChanged += OnSemanticChanged;
 
@@ -72,7 +111,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         {
             _subclassId = ++_subclassCounter;
             _subclassProc = SubclassWindowProc;
-            WindowNative.SetWindowSubclass(_hwnd, _subclassProc, _subclassId, 0);
+            _isSubclassed = WindowNative.SetWindowSubclass(_hwnd, _subclassProc, _subclassId, 0);
         }
         else
         {
@@ -88,54 +127,173 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     public Func<double> ScaleProvider => _scaleProvider;
 
+    /// <summary>Raised when a provider's native wrapper is disconnected from UIA, for diagnostics and tests.</summary>
+    internal event Action<IRawElementProviderSimple>? ProviderDisconnected;
+
+    /// <summary>
+    /// Whether a UIA client listens for events. UIA answers for the whole machine, so tests pin it to
+    /// see what a client would be sent.
+    /// </summary>
+    internal Func<bool> ClientsListening { get; set; } = UiaNative.UiaClientsAreListening;
+
+    /// <summary>Automation events raised to UIA (not property or structure changes), for diagnostics and tests.</summary>
+    internal event Action<IRawElementProviderSimple, int>? EventRaised;
+
+    internal void RaiseEvent(IRawElementProviderSimple target, int eventId)
+    {
+        EventRaised?.Invoke(target, eventId);
+        UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(target)!, eventId);
+    }
+
     private nint SubclassWindowProc(nint hWnd, uint uMsg, nint wParam, nint lParam, nuint uIdSubclass, nuint dwRefData)
     {
-        if (uMsg == UiaNative.WmGetObject && ((int)lParam == UiaNative.UiaRootObjectId || unchecked((uint)(long)lParam) == 0xFFFFFFE7))
+        if (uMsg == UiaNative.WmGetObject && !IsTornDown && ((int)lParam == UiaNative.UiaRootObjectId || unchecked((uint)(long)lParam) == 0xFFFFFFE7))
         {
             return UiaNative.UiaReturnRawElementProvider(hWnd, wParam, lParam, NativeProviderAdapter.For(this)!);
         }
 
+        if (uMsg == WindowNative.WmDestroy)
+        {
+            // Calls still arriving fail as not available, and UIA lets go of what it holds for the window.
+            _windowDestroyed = true;
+            ReleaseProviders();
+        }
+        else if (uMsg == WindowNative.WmNcdestroy)
+        {
+            // A subclass must be gone before the window is; DefSubclassProc still completes this call.
+            RemoveSubclass();
+        }
+
         return WindowNative.DefSubclassProc(hWnd, uMsg, wParam, lParam);
+    }
+
+    private void RemoveSubclass()
+    {
+        if (!_isSubclassed || _subclassProc is null) return;
+        _isSubclassed = false;
+        WindowNative.RemoveWindowSubclass(_hwnd, _subclassProc, _subclassId);
+    }
+
+    /// <summary>
+    /// Disconnects every provider wrapper this bridge handed to UIA and, for a window, tells UIA to
+    /// release the providers it obtained for it (UiaReturnRawElementProvider with no provider).
+    /// </summary>
+    private void ReleaseProviders()
+    {
+        if (_providersReleased) return;
+        _providersReleased = true;
+
+        Disconnect(this);
+        foreach (WindowsElementAutomationPeer peer in _elementPeers.Values) Disconnect(peer);
+        foreach (WindowsElementAutomationPeer peer in _itemPeers.Values) Disconnect(peer);
+        foreach (WindowsElementAutomationPeer peer in _tabPeers.Values) Disconnect(peer);
+        foreach (WindowsElementAutomationPeer peer in _treeRowPeers.Values) Disconnect(peer);
+        if (_hwnd != nint.Zero)
+            AutomationInterop.UiaReleaseWindowProviders(_hwnd);
+
+        _elementPeers.Clear();
+        _itemPeers.Clear();
+        _tabPeers.Clear();
+        _treeRowPeers.Clear();
+        _snapshots.Clear();
+        _treeRows.Clear();
+        _structureChanges.Clear();
+        _treesToCheck.Clear();
+    }
+
+    // Only wrappers that exist were ever handed out; a peer that never reached UIA has nothing to release.
+    private void Disconnect(IRawElementProviderSimple provider)
+    {
+        if (NativeProviderAdapter.Existing(provider) is not { } adapter) return;
+        AutomationInterop.UiaDisconnectProvider(adapter);
+        ProviderDisconnected?.Invoke(provider);
     }
 
     public WindowsElementAutomationPeer GetOrCreatePeer(UiElement element)
     {
         ArgumentNullException.ThrowIfNull(element);
 
-        if (_elementPeers.TryGetValue(element.SemanticId, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
+        // A semantic ID names one element for good, so an existing peer is that element's, alive or not.
+        if (_elementPeers.TryGetValue(element.SemanticId, out WindowsElementAutomationPeer? existing))
             return existing;
 
         var peer = new WindowsElementAutomationPeer(this, element);
         _elementPeers[element.SemanticId] = peer;
         // The first snapshot is the baseline that later changes are compared with.
         _snapshots[element.SemanticId] = Capture(element, peer);
+        if (element is UiTreeView tree)
+            _treeRows[tree.SemanticId] = RowsInView(tree);
         return peer;
     }
 
+    /// <summary>The peer of the item now at <paramref name="index"/>; it follows that item, not the index.</summary>
     public WindowsElementAutomationPeer GetOrCreateItemPeer(UiListView listView, int index)
     {
         ArgumentNullException.ThrowIfNull(listView);
+        if ((uint)index >= (uint)listView.Items.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+        return ItemPeer(listView, listView.Items[index].Id);
+    }
 
-        var key = (listView.SemanticId, index);
-        if (_itemPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
+    /// <summary>The peer of the tab now at <paramref name="index"/>; it follows that tab, not the index.</summary>
+    public WindowsElementAutomationPeer GetOrCreateTabPeer(UiTabView tabView, int index)
+    {
+        ArgumentNullException.ThrowIfNull(tabView);
+        if ((uint)index >= (uint)tabView.Tabs.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+        return TabPeer(tabView, tabView.Tabs[index].Id);
+    }
+
+    // A row, tab or tree row peer also makes its container's peer: the container's snapshot is what its
+    // selection changes are compared with, so a client that reached a row only through a focus event
+    // still hears when the selection, and with it the focus, moves on.
+    internal WindowsElementAutomationPeer ItemPeer(UiListView listView, string itemId)
+    {
+        var key = (listView.SemanticId, itemId);
+        if (_itemPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
-        var peer = new WindowsElementAutomationPeer(this, listView, index);
+        GetOrCreatePeer(listView);
+        var peer = new WindowsElementAutomationPeer(this, listView, itemId);
         _itemPeers[key] = peer;
         return peer;
     }
 
-    public WindowsElementAutomationPeer GetOrCreateTabPeer(UiTabView tabView, int index)
+    internal WindowsElementAutomationPeer TabPeer(UiTabView tabView, string tabId)
     {
-        ArgumentNullException.ThrowIfNull(tabView);
-
-        var key = (tabView.SemanticId, index);
-        if (_tabPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing) && existing.IsAlive)
+        var key = (tabView.SemanticId, tabId);
+        if (_tabPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
             return existing;
 
-        var peer = new WindowsElementAutomationPeer(this, tabView, index);
+        GetOrCreatePeer(tabView);
+        var peer = new WindowsElementAutomationPeer(this, tabView, tabId);
         _tabPeers[key] = peer;
         return peer;
+    }
+
+    internal WindowsElementAutomationPeer TreeRowPeer(UiTreeView treeView, TreeNodeId node)
+    {
+        var key = (treeView.SemanticId, node.Value);
+        if (_treeRowPeers.TryGetValue(key, out WindowsElementAutomationPeer? existing))
+            return existing;
+
+        GetOrCreatePeer(treeView);
+        var peer = new WindowsElementAutomationPeer(this, treeView, node);
+        _treeRowPeers[key] = peer;
+        return peer;
+    }
+
+    /// <summary>A runtime ID value unique among this bridge's providers; values are never reused.</summary>
+    internal int AllocateRuntimeId() => checked(++_lastRuntimeId);
+
+    internal int RuntimeIdFor(UiElement element)
+    {
+        if (!_elementRuntimeIds.TryGetValue(element, out StrongBox<int>? id))
+        {
+            id = new StrongBox<int>(AllocateRuntimeId());
+            _elementRuntimeIds.Add(element, id);
+        }
+        return id.Value;
     }
 
     public UiaRect GetScreenRect(BRect dipRect)
@@ -154,24 +312,44 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             Math.Max(0, dipRect.Height * scale));
     }
 
+    /// <summary>
+    /// <paramref name="dipRect"/> cut to the window's surface, the root's bounds; empty when it lies
+    /// outside. Broiler.UI clips to scroll viewports and lists, but not to the host window.
+    /// </summary>
+    internal BRect ClipToSurface(BRect dipRect) => dipRect.IsEmpty ? BRect.Empty : dipRect.Intersect(_root.Bounds);
+
     private void OnSemanticChanged(object? sender, UiSemanticChangedEventArgs e)
     {
-        if (!UiaNative.UiaClientsAreListening())
+        if (IsTornDown)
+            return;
+
+        // Structure changes also drop the peers of removed elements, so they are collected whether or
+        // not a client listens.
+        if (e.Change is UiSemanticChangeKind.StructureChanged or UiSemanticChangeKind.SubtreeChanged)
+        {
+            QueueStructureChange(e.Element ?? _root);
+            return;
+        }
+
+        // A tree's rows in view, which are its children, change without a structure change.
+        if (e.Change is UiSemanticChangeKind.StateChanged && e.Element is UiTreeView changedTree && _treeRows.ContainsKey(changedTree.SemanticId))
+            QueueTreeCheck(changedTree);
+
+        if (!ClientsListening())
             return;
 
         switch (e.Change)
         {
-            case UiSemanticChangeKind.FocusChanged when e.Element is not null:
-                WindowsElementAutomationPeer focusedPeer = GetOrCreatePeer(e.Element);
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(focusedPeer)!, UiaNative.UiaAutomationFocusChangedEventId);
-                RaisePropertyChanged(focusedPeer, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
+            case UiSemanticChangeKind.FocusChanged:
+                if (_focusHoldDepth > 0) _focusMovedWhileHeld = true;
+                else RaiseFocusChanged();
                 break;
 
             case UiSemanticChangeKind.StatusAnnounced:
                 IRawElementProviderSimple target = e.Element is not null ? GetOrCreatePeer(e.Element) : this;
                 if (StatusAnnouncements.Plan(e.Element!, e.Message) is { } notification && RaiseNotification(target, notification))
                     break;
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(target)!, UiaNative.UiaLiveRegionChangedEventId);
+                RaiseEvent(target, UiaNative.UiaLiveRegionChangedEventId);
                 break;
 
             // Every semantic invalidation arrives as StateChanged; only real differences become UIA events,
@@ -180,15 +358,151 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
                 && _elementPeers.TryGetValue(e.Element.SemanticId, out WindowsElementAutomationPeer? statePeer) && statePeer.IsAlive:
                 RaiseChanges(e.Element, statePeer);
                 break;
-
-            case UiSemanticChangeKind.StructureChanged or UiSemanticChangeKind.SubtreeChanged:
-                CleanDeadPeers();
-                UiaNative.UiaRaiseStructureChangedEvent(NativeProviderAdapter.For(this)!, StructureChangeType.ChildrenInvalidated, null, 0);
-                break;
         }
     }
 
-    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, int SelectedIndex);
+    // The event names what now has the focus, as GetFocus does: the selected row of a focused list
+    // rather than the list, and the root when focus went nowhere, never the element that lost it.
+    private void RaiseFocusChanged()
+    {
+        IRawElementProviderSimple focused = FocusTarget();
+        RaiseEvent(focused, UiaNative.UiaAutomationFocusChangedEventId);
+        RaisePropertyChanged(focused, UiaNative.UiaHasKeyboardFocusPropertyId, false, true);
+    }
+
+    private int _focusHoldDepth;
+    private bool _focusMovedWhileHeld;
+    private (UiElement? Element, string? Item) _focusBeforeHold;
+
+    /// <summary>
+    /// Runs <paramref name="selection"/>, a selection a UIA client asked for, with focus events held, and
+    /// then raises one focus event for wherever the focus is. Selecting focuses the list or tab view
+    /// first, as a click does, and the focus event for that would name the row or tab selected before:
+    /// a screen reader would read the old message ahead of the new one. Clients hear ElementSelected on
+    /// the new row, and then the focus on it, or on whatever the application's selection handler focused;
+    /// nothing when the focus ends where it started, since the moves between were never announced.
+    /// </summary>
+    /// <remarks>
+    /// Only Select itself is covered, which is all a COM client's Select calls. For a UIA2 client's Select
+    /// (System.Windows.Automation and the tools built on it), UIAutomationCore first calls SetFocus on the
+    /// row, and SetFocus does not select, so that client has been told of the row selected before by then.
+    /// The two calls arrive on their own, with the dispatcher running between them, so the bridge cannot
+    /// tell from the SetFocus that a Select follows.
+    /// </remarks>
+    internal void HoldFocusEvents(Action selection)
+    {
+        if (_focusHoldDepth++ == 0) _focusBeforeHold = FocusedItem();
+        try { selection(); }
+        finally
+        {
+            if (--_focusHoldDepth == 0 && _focusMovedWhileHeld)
+            {
+                _focusMovedWhileHeld = false;
+                if (!IsTornDown && ClientsListening() && FocusedItem() != _focusBeforeHold)
+                    RaiseFocusChanged();
+            }
+        }
+    }
+
+    private readonly List<UiElement> _structureChanges = [];
+    private bool _structureFlushQueued;
+
+    // The rows exposed by each tree a client has reached, and the trees whose rows may have changed:
+    // expanding, collapsing and moving the focus change them, and so does scrolling, which Broiler.UI
+    // reports only as a render change. Moving the focus scrolls after the selection's state change, so
+    // they are compared when the dispatcher next runs, after the change is complete.
+    private readonly Dictionary<long, string> _treeRows = new();
+    private readonly List<UiTreeView> _treesToCheck = [];
+
+    /// <summary>Raised with the providers whose children a flush invalidated, for diagnostics and tests.</summary>
+    internal event Action<IReadOnlyList<IRawElementProviderSimple>>? StructureInvalidated;
+
+    // Broiler.UI raises StructureChanged once per changed parent after an input dispatch or a frame, but
+    // one per change for changes an application makes between them. The bridge collects them until the
+    // dispatcher next runs, which a host does before each frame, so a refresh that adds a hundred rows
+    // or fields is one event per container. An ImmediateUiDispatcher runs the flush inside Post, so
+    // there each change is flushed on its own.
+    private void QueueStructureChange(UiElement element)
+    {
+        if (!_structureChanges.Contains(element))
+            _structureChanges.Add(element);
+        QueueFlush();
+    }
+
+    /// <summary>Compares the tree's rows in view with what clients were last told when the dispatcher next runs.</summary>
+    internal void QueueTreeCheck(UiTreeView tree)
+    {
+        if (IsTornDown)
+            return;
+        if (!_treesToCheck.Contains(tree))
+            _treesToCheck.Add(tree);
+        QueueFlush();
+    }
+
+    private void QueueFlush()
+    {
+        if (_structureFlushQueued)
+            return;
+
+        _structureFlushQueued = true;
+        _session.Dispatcher.Post(FlushStructureChanges);
+    }
+
+    /// <summary>
+    /// Drops the peers of what was removed, disconnecting them from UIA, and raises one
+    /// children-invalidated event on the peer of each changed parent, a tree whose exposed rows differ
+    /// included. A parent no client has reached has no peer and needs none, and one inside another
+    /// changed parent is covered by it.
+    /// </summary>
+    private void FlushStructureChanges()
+    {
+        _structureFlushQueued = false;
+        var changed = new List<UiElement>(_structureChanges);
+        UiTreeView[] trees = [.. _treesToCheck];
+        _structureChanges.Clear();
+        _treesToCheck.Clear();
+        if (IsTornDown || _session.IsDisposed || (changed.Count == 0 && trees.Length == 0))
+            return;
+
+        CleanDeadPeers();
+
+        foreach (UiTreeView tree in trees)
+        {
+            if (tree.IsDisposed || tree.Session != _session || !_treeRows.TryGetValue(tree.SemanticId, out string? before))
+                continue;
+            string now = RowsInView(tree);
+            if (now == before)
+                continue;
+            _treeRows[tree.SemanticId] = now;
+            if (!changed.Contains(tree))
+                changed.Add(tree);
+        }
+
+        var targets = new List<UiElement>();
+        foreach (UiElement element in changed)
+        {
+            bool reached = ReferenceEquals(element, _root)
+                || (_elementPeers.TryGetValue(element.SemanticId, out WindowsElementAutomationPeer? peer) && peer.IsAlive);
+            if (reached && !targets.Contains(element))
+                targets.Add(element);
+        }
+        targets.RemoveAll(element => targets.Exists(other => !ReferenceEquals(other, element) && element.IsDescendantOf(other)));
+        if (targets.Count == 0)
+            return;
+
+        var providers = targets.ConvertAll<IRawElementProviderSimple>(element => ReferenceEquals(element, _root) ? this : _elementPeers[element.SemanticId]);
+        StructureInvalidated?.Invoke(providers);
+        if (!ClientsListening())
+            return;
+
+        foreach (IRawElementProviderSimple provider in providers)
+            UiaNative.UiaRaiseStructureChangedEvent(NativeProviderAdapter.For(provider)!, StructureChangeType.ChildrenInvalidated, null, 0);
+    }
+
+    // The selection is the selected item or tab id: rows inserted above it change its index, not the selection.
+    // Expansion is null for an element that does not expand, Toggle for one that does not toggle.
+    private readonly record struct AutomationSnapshot(string Name, bool IsEnabled, string? Text, int SelectionStart, int SelectionLength, string? SelectedId,
+        ExpandCollapseState? Expansion, bool IsDataValid, string? Description, ToggleState? Toggle);
 
     private static AutomationSnapshot Capture(UiElement element, WindowsElementAutomationPeer peer)
     {
@@ -201,7 +515,24 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             value,
             value is null ? 0 : text?.SelectionLength > 0 ? text.SelectionStart : text?.CaretIndex ?? 0,
             value is null ? 0 : text?.SelectionLength ?? 0,
-            element switch { UiListView list => list.SelectedIndex, UiTabView tabs => tabs.SelectedIndex, _ => -1 });
+            element switch
+            {
+                UiListView list => list.SelectedItemId,
+                UiTabView tabs => tabs.SelectedTab?.Id,
+                UiTreeView { Selection.Count: > 0 } tree => tree.Selection[^1].Value,
+                _ => null,
+            },
+            WindowsElementAutomationPeer.HasExpandState(node.State) ? WindowsElementAutomationPeer.ExpandStateOf(node.State) : null,
+            !node.State.HasFlag(UiSemanticState.Invalid),
+            string.IsNullOrWhiteSpace(node.Description) ? null : node.Description,
+            WindowsElementAutomationPeer.IsToggle(node.Role) ? WindowsElementAutomationPeer.ToggleStateOf(node.State) : null);
+    }
+
+    // The ids of the rows exposed as the tree's children, in order.
+    private static string RowsInView(UiTreeView tree)
+    {
+        List<int> rows = WindowsElementAutomationPeer.ExposedRows(tree);
+        return string.Join('\n', rows.ConvertAll(index => tree.Rows[index].Id.Value));
     }
 
     /// <summary>A UIA event or property change detected for an element, raised only while clients listen.</summary>
@@ -213,13 +544,16 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
     private void RaiseChanges(UiElement element, WindowsElementAutomationPeer peer)
     {
         List<AutomationChange> changes = DetectChanges(element, peer);
+        // The focus moving with the selection is raised once the hold ends, after ElementSelected.
+        if (_focusHoldDepth > 0 && changes.RemoveAll(change => !change.IsProperty && change.Id == UiaNative.UiaAutomationFocusChangedEventId) > 0)
+            _focusMovedWhileHeld = true;
         if (changes.Count > 0) ChangesRaised?.Invoke(changes);
         foreach (AutomationChange change in changes)
         {
             if (change.IsProperty)
                 RaisePropertyChanged(change.Target, change.Id, change.OldValue, change.NewValue);
             else
-                UiaNative.UiaRaiseAutomationEvent(NativeProviderAdapter.For(change.Target)!, change.Id);
+                RaiseEvent(change.Target, change.Id);
         }
     }
 
@@ -244,16 +578,42 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         }
         if (now.Text is not null && (before.SelectionStart, before.SelectionLength) != (now.SelectionStart, now.SelectionLength))
             changes.Add(new(peer, UiaNative.UiaText_TextSelectionChangedEventId, false));
-        if (before.SelectedIndex != now.SelectedIndex && now.SelectedIndex >= 0)
+        if (before.Expansion != now.Expansion && now.Expansion is { } expansion)
+            changes.Add(new(peer, UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId, true, (int)(before.Expansion ?? ExpandCollapseState.LeafNode), (int)expansion));
+        if (before.Toggle != now.Toggle && now.Toggle is { } toggle)
+            changes.Add(new(peer, UiaNative.UiaToggleToggleStatePropertyId, true, (int)(before.Toggle ?? ToggleState.Off), (int)toggle));
+        if (before.IsDataValid != now.IsDataValid)
+            changes.Add(new(peer, AutomationInterop.IsDataValidForFormPropertyId, true, before.IsDataValid, now.IsDataValid));
+        if (before.Description != now.Description)
+            changes.Add(new(peer, AutomationInterop.FullDescriptionPropertyId, true, before.Description ?? string.Empty, now.Description ?? string.Empty));
+        if (before.SelectedId != now.SelectedId && now.SelectedId is { } selectedId)
         {
             IRawElementProviderSimple? selected = element switch
             {
-                UiListView list when now.SelectedIndex < list.Items.Count => GetOrCreateItemPeer(list, now.SelectedIndex),
-                UiTabView tabs when now.SelectedIndex < tabs.Tabs.Count => GetOrCreateTabPeer(tabs, now.SelectedIndex),
+                UiListView list when list.IndexOf(selectedId) >= 0 => ItemPeer(list, selectedId),
+                UiTabView tabs when WindowsElementAutomationPeer.IndexOfTab(tabs, selectedId) >= 0 => TabPeer(tabs, selectedId),
+                UiTreeView tree when WindowsElementAutomationPeer.IsRowExposed(tree, WindowsElementAutomationPeer.IndexOfRow(tree, new TreeNodeId(selectedId))) => TreeRowPeer(tree, new TreeNodeId(selectedId)),
                 _ => null,
             };
             if (selected is not null)
+            {
                 changes.Add(new(selected, UiaNative.UiaSelectionItem_ElementSelectedEventId, false));
+                // In a focused container the focus moves with the selection, as GetFocus reports it.
+                if (ReferenceEquals(_session.FocusedElement, element) && ReferenceEquals(FocusTarget(), selected))
+                    changes.Add(new(selected, UiaNative.UiaAutomationFocusChangedEventId, false));
+            }
+        }
+
+        if (element is UiTreeView changedTree)
+        {
+            // Rows a client holds report their own expand state; rows shown or hidden are a structure change.
+            foreach (((long treeId, string _), WindowsElementAutomationPeer row) in _treeRowPeers)
+            {
+                if (treeId != changedTree.SemanticId || !row.IsAlive || row.ExpandCollapseState == row.LastReportedExpansion)
+                    continue;
+                changes.Add(new(row, UiaNative.UiaExpandCollapseExpandCollapseStatePropertyId, true, (int)row.LastReportedExpansion, (int)row.ExpandCollapseState));
+                row.LastReportedExpansion = row.ExpandCollapseState;
+            }
         }
 
         return changes;
@@ -284,36 +644,42 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         UiaNative.UiaRaiseAutomationPropertyChangedEvent(NativeProviderAdapter.For(provider)!, propertyId, AutomationVariant.From(oldVar), AutomationVariant.From(newVar));
     }
 
-    private void CleanDeadPeers()
+    /// <summary>Drops the peers of elements, items and tabs that are gone, and disconnects their wrappers from UIA.</summary>
+    internal void CleanDeadPeers()
     {
-        var deadElementKeys = new List<long>();
-        foreach ((long key, WindowsElementAutomationPeer peer) in _elementPeers)
+        if (IsTornDown) return;
+        RemoveDeadPeers(_elementPeers, key =>
         {
-            if (!peer.IsAlive) deadElementKeys.Add(key);
-        }
-        foreach (long key in deadElementKeys)
-        {
-            _elementPeers.Remove(key);
             _snapshots.Remove(key);
-        }
+            _treeRows.Remove(key);
+        });
+        RemoveDeadPeers(_itemPeers);
+        RemoveDeadPeers(_tabPeers);
+        RemoveDeadPeers(_treeRowPeers);
+    }
 
-        var deadItemKeys = new List<(long, int)>();
-        foreach (((long, int) key, WindowsElementAutomationPeer peer) in _itemPeers)
+    private void RemoveDeadPeers<TKey>(Dictionary<TKey, WindowsElementAutomationPeer> peers, Action<TKey>? removed = null) where TKey : notnull
+    {
+        List<TKey>? dead = null;
+        foreach ((TKey key, WindowsElementAutomationPeer peer) in peers)
         {
-            if (!peer.IsAlive) deadItemKeys.Add(key);
+            if (!peer.IsAlive) (dead ??= []).Add(key);
         }
-        foreach (var key in deadItemKeys) _itemPeers.Remove(key);
+        if (dead is null) return;
 
-        var deadTabKeys = new List<(long, int)>();
-        foreach (((long, int) key, WindowsElementAutomationPeer peer) in _tabPeers)
+        foreach (TKey key in dead)
         {
-            if (!peer.IsAlive) deadTabKeys.Add(key);
+            Disconnect(peers[key]);
+            peers.Remove(key);
+            removed?.Invoke(key);
         }
-        foreach (var key in deadTabKeys) _tabPeers.Remove(key);
     }
 
     // --- IRawElementProviderSimple ---
 
+    // ProviderOwnsSetFocus is not declared, here or on the peers: every element lives in this window,
+    // so UIA giving the window the Win32 focus before it calls SetFocus is what lets the session's
+    // focused element receive the keys, as Win32 and WinUI controls hosted in one window rely on.
     public ProviderOptions ProviderOptions =>
         ProviderOptions.ServerSideProvider | ProviderOptions.UseComThreading;
 
@@ -332,6 +698,10 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         UiaNative.UiaBoundingRectanglePropertyId => BoundingRectangle,
         UiaNative.UiaIsEnabledPropertyId => true,
         UiaNative.UiaIsKeyboardFocusablePropertyId => true,
+        // The window's pane is no form field. UIA reports IsDataValidForForm left unanswered as false, so
+        // it is answered, and without describing the root, which would describe the whole tree.
+        AutomationInterop.IsRequiredForFormPropertyId => false,
+        AutomationInterop.IsDataValidForFormPropertyId => true,
         _ => null,
     };
 
@@ -341,7 +711,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     public UiaRect BoundingRectangle => GetScreenRect(_root.Bounds);
 
-    public int[]? GetRuntimeId() => [1, unchecked((int)_hwnd), (int)_root.SemanticId];
+    // A fragment root hosted in a window returns none: UIA uses the window's own runtime ID, and prefixes
+    // every peer's appended ID with it. Without a window there is no host, so the root appends its own.
+    public int[]? GetRuntimeId() => _hwnd != nint.Zero ? null : [AutomationInterop.AppendRuntimeId, _rootRuntimeId];
 
     public IRawElementProviderSimple[]? GetEmbeddedFragmentRoots() => null;
 
@@ -356,6 +728,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private IRawElementProviderFragment? GetFirstChild(UiElement parent)
     {
+        if (parent is UiTreeView tree)
+            return WindowsElementAutomationPeer.FirstTreeRow(this, tree);
+
         if (parent is UiListView lv && lv.Items.Count > 0)
             return GetOrCreateItemPeer(lv, 0);
 
@@ -372,6 +747,9 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
 
     private IRawElementProviderFragment? GetLastChild(UiElement parent)
     {
+        if (parent is UiTreeView tree)
+            return WindowsElementAutomationPeer.LastTreeRow(this, tree);
+
         if (parent is UiListView lv && lv.Items.Count > 0)
             return GetOrCreateItemPeer(lv, lv.Items.Count - 1);
 
@@ -411,70 +789,90 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
             dipY = pt.Y / scale;
         }
 
-        UiElement? hit = HitTestElement(_root, new BPoint(dipX, dipY));
-        if (hit is null) return this;
+        var point = new BPoint(dipX, dipY);
+        // The session's own hit test: it respects overlays, such as an open drop-down drawn over the
+        // fields below it, and what containers clip, such as a field scrolled out under an action bar.
+        UiElement? hit = _session.HitTest(point);
+        // Another root of the session is not this bridge's to describe, and what it draws over this one
+        // hides what lies below; the window answers for that point.
+        if (hit is not null && !ReferenceEquals(hit, _root) && !hit.IsDescendantOf(_root))
+            return this;
+        while (hit is not null && !ReferenceEquals(hit, _root) && !AutomationExposure.IsExposed(hit))
+            hit = hit.Parent;
+        if (hit is null || ReferenceEquals(hit, _root)) return this;
 
-        if (hit is UiListView lv && lv.Items.Count > 0)
-        {
-            double relativeY = dipY - lv.Bounds.Top + lv.VerticalOffset;
-            double itemHeight = WindowsElementAutomationPeer.GetItemHeight(lv);
-            if (itemHeight > 0)
-            {
-                int itemIndex = (int)(relativeY / itemHeight);
-                if (itemIndex >= 0 && itemIndex < lv.Items.Count)
-                    return GetOrCreateItemPeer(lv, itemIndex);
-            }
-        }
-        else if (hit is UiTabView tv && tv.Tabs.Count > 0)
-        {
-            double headerHeight = (tv as StandardTabView)?.HeaderHeight ?? 32.0;
-            if (dipY >= tv.Bounds.Top && dipY <= tv.Bounds.Top + headerHeight)
-            {
-                double tabWidth = tv.Bounds.Width / Math.Max(1, tv.Tabs.Count);
-                if (tabWidth > 0)
-                {
-                    int tabIndex = (int)((dipX - tv.Bounds.Left) / tabWidth);
-                    if (tabIndex >= 0 && tabIndex < tv.Tabs.Count)
-                        return GetOrCreateTabPeer(tv, tabIndex);
-                }
-            }
-        }
-
+        if (hit is UiListView lv && ItemAt(lv, point) is { } item) return item;
+        if (hit is UiTabView tv && TabAt(tv, point) is { } tab) return tab;
+        if (hit is UiTreeView tree && RowAt(tree, point) is { } row) return row;
         return GetOrCreatePeer(hit);
     }
 
-    public IRawElementProviderFragment? GetFocus()
+    // The row under the point, by the same geometry the item peers report.
+    private WindowsElementAutomationPeer? ItemAt(UiListView list, BPoint point)
     {
-        UiElement? focused = _session.FocusedElement;
-        if (focused is null) return this;
-
-        if (focused is UiListView lv && lv.SelectedIndex >= 0 && lv.SelectedIndex < lv.Items.Count)
+        double rowHeight = WindowsElementAutomationPeer.GetItemHeight(list);
+        if (rowHeight <= 0 || list.Items.Count == 0) return null;
+        double top = list is StandardListView standard ? standard.ContentBounds.Top : list.Bounds.Top;
+        int guess = (int)Math.Floor((point.Y - top + list.VerticalOffset) / rowHeight);
+        for (int index = Math.Max(0, guess - 1); index <= Math.Min(list.Items.Count - 1, guess + 1); index++)
         {
-            return GetOrCreateItemPeer(lv, lv.SelectedIndex);
+            WindowsElementAutomationPeer peer = ItemPeer(list, list.Items[index].Id);
+            if (peer.VisibleBounds.Contains(point)) return peer;
         }
-
-        if (focused is UiTabView tv && tv.SelectedIndex >= 0 && tv.SelectedIndex < tv.Tabs.Count)
-        {
-            return GetOrCreateTabPeer(tv, tv.SelectedIndex);
-        }
-
-        return GetOrCreatePeer(focused);
+        return null;
     }
 
-    private static UiElement? HitTestElement(UiElement root, BPoint point)
+    // Only rows in view can be hit, by the geometry their peers report.
+    private WindowsElementAutomationPeer? RowAt(UiTreeView tree, BPoint point)
     {
-        if (!AutomationExposure.IsExposed(root) || !root.Bounds.Contains(point))
-            return null;
-
-        for (int i = root.Children.Count - 1; i >= 0; i--)
+        // Other trees report no row geometry, and answer for themselves.
+        if (tree is not StandardTreeView) return null;
+        (int first, int end) = WindowsElementAutomationPeer.VisibleRows(tree);
+        for (int index = first; index < end; index++)
         {
-            UiElement? childHit = HitTestElement(root.Children[i], point);
-            if (childHit is not null)
-                return childHit;
+            if (WindowsElementAutomationPeer.RowBounds(tree, index).Contains(point))
+                return TreeRowPeer(tree, tree.Rows[index].Id);
         }
-
-        return root;
+        return null;
     }
+
+    // Only a header the view really draws can be hit; a view without header geometry answers for itself.
+    private WindowsElementAutomationPeer? TabAt(UiTabView tabs, BPoint point)
+    {
+        for (int index = 0; index < tabs.Tabs.Count && index < tabs.VisibleTabCapacity; index++)
+        {
+            if (!tabs.GetTabHeaderBounds(index).IsEmpty && WindowsElementAutomationPeer.TabBounds(tabs, index).Contains(point))
+                return TabPeer(tabs, tabs.Tabs[index].Id);
+        }
+        return null;
+    }
+
+    public IRawElementProviderFragment? GetFocus() => FocusTarget();
+
+    /// <summary>
+    /// The provider that has the keyboard focus: the selected row or tab of a focused list, tab view
+    /// or tree, which have no focus apart from their selection, or the focused element; the root when
+    /// nothing has the focus. Focus events go to the same provider.
+    /// </summary>
+    internal IRawElementProviderFragment FocusTarget() => FocusedItem() switch
+    {
+        (null, _) => this,
+        (UiListView lv, { } itemId) => ItemPeer(lv, itemId),
+        (UiTabView tv, { } tabId) => TabPeer(tv, tabId),
+        (UiTreeView tree, { } node) => TreeRowPeer(tree, new TreeNodeId(node)),
+        (UiElement focused, _) => GetOrCreatePeer(focused),
+    };
+
+    // What FocusTarget names, without making a peer for it: the focused element, and the id of the row,
+    // tab or tree row the focus is on inside it.
+    private (UiElement? Element, string? Item) FocusedItem() => _session.FocusedElement switch
+    {
+        null => (null, null),
+        UiListView lv when lv.SelectedItemId is { } itemId && lv.IndexOf(itemId) >= 0 => (lv, itemId),
+        UiTabView tv when tv.SelectedTab is { } tab => (tv, tab.Id),
+        UiTreeView tree when !tree.FocusedNode.IsNone && WindowsElementAutomationPeer.IndexOfRow(tree, tree.FocusedNode) >= 0 => (tree, tree.FocusedNode.Value),
+        UiElement focused => (focused, null),
+    };
 
     public void Dispose()
     {
@@ -482,15 +880,7 @@ public sealed class WindowsAutomationBridge : IRawElementProviderFragmentRoot, I
         _isDisposed = true;
 
         _session.SemanticChanged -= OnSemanticChanged;
-
-        if (_hwnd != nint.Zero && _subclassProc is not null)
-        {
-            WindowNative.RemoveWindowSubclass(_hwnd, _subclassProc, _subclassId);
-        }
-
-        _elementPeers.Clear();
-        _itemPeers.Clear();
-        _tabPeers.Clear();
-        _snapshots.Clear();
+        RemoveSubclass();
+        ReleaseProviders();
     }
 }

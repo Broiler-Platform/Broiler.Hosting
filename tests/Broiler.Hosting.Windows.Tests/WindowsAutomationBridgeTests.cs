@@ -390,7 +390,7 @@ public sealed class WindowsAutomationBridgeTests
         session.SetFocus(edit);
         var focusedPeer = bridge.GetFocus();
         Assert.NotNull(focusedPeer);
-        Assert.Equal((int)edit.SemanticId, focusedPeer.GetRuntimeId()?[2]);
+        Assert.Same(bridge.GetOrCreatePeer(edit), focusedPeer);
 
         // Focus list view and select item 1
         listView.SelectIndex(1);
@@ -398,6 +398,89 @@ public sealed class WindowsAutomationBridgeTests
         var focusedItemPeer = bridge.GetFocus();
         Assert.NotNull(focusedItemPeer);
         Assert.Equal("Item 2", focusedItemPeer.GetPropertyValue(UiaNative.UiaNamePropertyId));
+    }
+
+    [Fact]
+    public void RuntimeIds_AreUniqueAcrossElementsItemsAndTabs()
+    {
+        var (_, bridge, root) = CreateTestEnvironment();
+        var list = new StandardListView();
+        list.SetItems(Enumerable.Range(0, 500).Select(i => new UiListItem($"m{i}", $"Message {i}")));
+        var tabs = new StandardTabView();
+        for (int i = 0; i < 20; i++) tabs.AddTab($"t{i}", $"Tab {i}");
+        root.AddChild(list);
+        root.AddChild(tabs);
+        var buttons = Enumerable.Range(0, 1000).Select(i => new StandardButton { Text = $"Button {i}" }).ToList();
+        foreach (var button in buttons) root.AddChild(button);
+
+        var providers = new List<IRawElementProviderFragment> { bridge, bridge.GetOrCreatePeer(list), bridge.GetOrCreatePeer(tabs) };
+        providers.AddRange(Enumerable.Range(0, 500).Select(i => bridge.GetOrCreateItemPeer(list, i)));
+        providers.AddRange(Enumerable.Range(0, 20).Select(i => bridge.GetOrCreateTabPeer(tabs, i)));
+        providers.AddRange(buttons.Select(bridge.GetOrCreatePeer));
+
+        var ids = providers.Select(p => string.Join(",", p.GetRuntimeId()!)).ToList();
+        Assert.Equal(ids.Count, ids.Distinct().Count());
+        // Every fragment's ID is appended to the hosting window's: [UiaAppendRuntimeId, value].
+        Assert.All(providers, p => Assert.Equal(3, p.GetRuntimeId()![0]));
+    }
+
+    [Fact]
+    public void ItemPeers_FollowTheirItemWhenRowsAreInsertedAbove()
+    {
+        var (_, bridge, root) = CreateTestEnvironment();
+        var list = new StandardListView();
+        list.SetItems([new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+        root.AddChild(list);
+
+        var bravo = bridge.GetOrCreateItemPeer(list, 1);
+        int[] bravoId = bravo.GetRuntimeId()!;
+
+        list.SetItems([new UiListItem("new", "Newest"), new UiListItem("a", "Alpha"), new UiListItem("b", "Bravo")]);
+
+        // The held peer still names Bravo, now at index 2, and so does its runtime ID.
+        Assert.Equal("Bravo", bravo.GetPropertyValue(UiaNative.UiaNamePropertyId));
+        Assert.Equal(2, bravo.ItemIndex);
+        Assert.Same(bravo, bridge.GetOrCreateItemPeer(list, 2));
+        Assert.Equal(bravoId, bridge.GetOrCreateItemPeer(list, 2).GetRuntimeId());
+        // The row now at Bravo's old index is another message with another runtime ID.
+        var alpha = bridge.GetOrCreateItemPeer(list, 1);
+        Assert.Equal("Alpha", alpha.GetPropertyValue(UiaNative.UiaNamePropertyId));
+        Assert.NotEqual(bravoId, alpha.GetRuntimeId());
+        Assert.Same(bravo, alpha.Navigate(NavigateDirection.NextSibling));
+
+        list.SetItems([new UiListItem("a", "Alpha")]);
+        Assert.False(bravo.IsAlive);
+        Assert.Null(bravo.GetRuntimeId());
+    }
+
+    [Fact]
+    public void TabPeers_FollowTheirTabWhenTabsMove()
+    {
+        var (_, bridge, root) = CreateTestEnvironment();
+        var tabs = new StandardTabView();
+        tabs.AddTab("inbox", "Inbox");
+        tabs.AddTab("compose", "Compose");
+        root.AddChild(tabs);
+
+        var compose = bridge.GetOrCreateTabPeer(tabs, 1);
+        int[] composeId = compose.GetRuntimeId()!;
+        tabs.MoveTab("compose", 0);
+
+        Assert.Equal("Compose", compose.GetPropertyValue(UiaNative.UiaNamePropertyId));
+        Assert.Same(compose, bridge.GetOrCreateTabPeer(tabs, 0));
+        Assert.Equal(composeId, bridge.GetOrCreateTabPeer(tabs, 0).GetRuntimeId());
+        Assert.NotEqual(composeId, bridge.GetOrCreateTabPeer(tabs, 1).GetRuntimeId());
+    }
+
+    [Fact]
+    public void ElementRuntimeIdIsStableWhileThePeerIsRecreated()
+    {
+        var (_, bridge, root) = CreateTestEnvironment();
+        var button = new StandardButton { Text = "Send" };
+        root.AddChild(button);
+        int[] first = bridge.GetOrCreatePeer(button).GetRuntimeId()!;
+        Assert.Equal(first, bridge.GetOrCreatePeer(button).GetRuntimeId());
+        Assert.Equal(first, new WindowsElementAutomationPeer(bridge, button).GetRuntimeId());
     }
 
     [Fact]

@@ -14,8 +14,13 @@ internal sealed partial class NativeTextRange(WindowsTextRange range) : INativeT
 
     internal WindowsTextRange Range { get; } = range;
 
-    private T Read<T>(Func<T> read) => Range.Owner.Bridge.OnUiThread(read);
-    private void Change(Action change) => Range.Owner.Bridge.OnUiThread(() => { change(); return true; });
+    // A range outlives nothing: once its element is gone, every call fails as not available.
+    private T Read<T>(Func<T> read) => Range.Owner.Bridge.OnUiThread(() =>
+    {
+        if (!Range.Owner.IsAlive) throw AutomationInterop.ElementNotAvailableException();
+        return read();
+    });
+    private void Change(Action change) => Read(() => { change(); return true; });
 
     // Ranges passed back by UIA are this process's own CCWs, which unwrap to the managed object.
     private static WindowsTextRange Unwrap(INativeTextRange other) =>
@@ -42,9 +47,10 @@ internal sealed partial class NativeTextRange(WindowsTextRange range) : INativeT
 
     public nint GetBoundingRectangles() => Read(() =>
     {
-        // Without per-character geometry, a non-empty range is reported as the element's area.
-        if (Range.IsDegenerate) return AutomationMarshalling.Doubles([]);
+        // Without per-character geometry, a non-empty range is reported as the visible part of the
+        // element; a range in an element scrolled out of view has no rectangle at all.
         UiaRect bounds = Range.Owner.BoundingRectangle;
+        if (Range.IsDegenerate || bounds.Width <= 0 || bounds.Height <= 0) return AutomationMarshalling.Doubles([]);
         return AutomationMarshalling.Doubles([bounds.Left, bounds.Top, bounds.Width, bounds.Height]);
     });
 
