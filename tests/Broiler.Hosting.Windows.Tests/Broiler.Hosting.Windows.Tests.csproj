@@ -23,6 +23,7 @@
     <PackageReference Include="Broiler.UI.Edit.Standard" />
     <PackageReference Include="Broiler.UI.FormatCodeView.Standard" />
     <PackageReference Include="Broiler.UI.Label.Standard" />
+    <PackageReference Include="Broiler.UI.ListView.Standard" />
     <PackageReference Include="Broiler.UI.Panel.Standard" />
     <PackageReference Include="Broiler.UI.RichEdit.Standard" />
     <PackageReference Include="Broiler.UI.SpinBox.Standard" />

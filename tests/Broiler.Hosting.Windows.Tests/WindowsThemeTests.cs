@@ -14,6 +14,9 @@ using Broiler.UI;
 using Broiler.UI.Button.Standard;
 using Broiler.UI.FormatCodeView.Standard;
 using Broiler.UI.Label.Standard;
+using Broiler.UI.ListView;
+using Broiler.UI.ListView.Standard;
+using Broiler.UI.RichEdit.Standard;
 using Broiler.UI.SpinBox.Standard;
 using Broiler.UI.Standard;
 using Broiler.UI.TabView.Standard;
@@ -163,6 +166,11 @@ public sealed class WindowsThemeTests
         AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
         AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
         AssertContrast(tokens.Accent, tokens.SurfaceDisabled, 3, $"{name}: accent fill on the track");
+        // A scrollbar's thumb on its track, and on the window beside the bar, which the thumb's sides meet. The bars
+        // are checked as the controls draw them, in custom themes too, in
+        // Scrollbar_Thumbs_Stand_Out_From_Their_Track_And_The_Window_As_The_Controls_Draw_Them.
+        AssertContrast(tokens.ScrollbarThumb, tokens.ScrollbarTrack, 3, $"{name}: scrollbar thumb on its track");
+        AssertContrast(tokens.ScrollbarThumb, tokens.Surface, 3, $"{name}: scrollbar thumb on the window");
     }
 
     [Theory]
@@ -355,6 +363,44 @@ public sealed class WindowsThemeTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    [MemberData(nameof(CustomContrastThemes))]
+    // A custom contrast theme whose buttons are drawn the other way round, so the button text is the window color.
+    [InlineData("Custom, button text in the window color", new uint[] { 0x000000, 0xFFFFFF, 0xD6B4FD, 0x2B2B2B, 0xFFFFFF, 0x000000, 0xA6A6A6, 0x8080FF }, true)]
+    public void Scrollbar_Thumbs_Stand_Out_From_Their_Track_And_The_Window_As_The_Controls_Draw_Them(string name, uint[] rgb, bool dark)
+    {
+        var colors = Colors(rgb);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors);
+        Assert.Equal(dark, tokens.IsDark);
+        Assert.Equal(colors.Window, tokens.ScrollbarTrack);
+        Assert.Contains(tokens.ScrollbarThumb, new[] { colors.ButtonText, colors.WindowText });
+        Assert.True(tokens.ScrollbarThumbContrast >= 3, $"{name}: scrollbar thumb at {tokens.ScrollbarThumbContrast:0.00}:1");
+
+        // A rich edit (Mail's composer and reading pane) and a format code view draw the theme's bars once it gives
+        // scrollbars colors, as a contrast palette does; a list draws them in every theme. Each holds more than it
+        // shows, so it draws its vertical bar.
+        string lines = string.Join('\n', Enumerable.Range(0, 60).Select(line => $"line {line}"));
+        var edit = new StandardRichEdit();
+        edit.SetPlainText(lines);
+        edit.ApplyTheme(tokens);
+        var codes = new StandardFormatCodeView { Projection = FormatCodeProjector.Project(RichTextDocument.FromPlainText(lines)) };
+        codes.ApplyTheme(tokens);
+        var list = new StandardListView();
+        list.SetItems(Enumerable.Range(0, 60).Select(index => new UiListItem($"item{index}", $"Item {index}")).ToArray());
+        list.ApplyTheme(tokens);
+
+        var box = new BRect(0, 0, 240, 120);
+        foreach (var (control, element) in new (string, UiElement)[] { ("rich edit", edit), ("format code view", codes), ("list", list) })
+        {
+            using var view = new StateView(element, box);
+            var (track, thumb) = VerticalBar(view.Render(), box, $"{name}: {control}");
+            Assert.Equal((tokens.ScrollbarTrack, tokens.ScrollbarThumb), (track, thumb));
+            AssertContrast(thumb, track, 3, $"{name}: {control} scrollbar thumb on its track");
+            AssertContrast(thumb, tokens.Surface, 3, $"{name}: {control} scrollbar thumb on the window");
+        }
+    }
+
     [Fact]
     public void The_States_Keep_The_Highlight_Pair_In_A_Copy_That_Recolors_The_Selection()
     {
@@ -527,6 +573,21 @@ public sealed class WindowsThemeTests
     {
         Assert.True(expected == drawn, $"{what}: drawn {drawn.Text} on {drawn.Fill}, expected {expected.Text} on {expected.Fill}");
         AssertContrast(drawn.Text, drawn.Fill, 4.5, what);
+    }
+
+    /// <summary>
+    /// The track and thumb of the vertical bar along the right edge of <paramref name="box"/>: the two fills a bar's
+    /// width (12) wide and taller than wide there, the track first.
+    /// </summary>
+    private static (BColor Track, BColor Thumb) VerticalBar(BRenderList list, BRect box, string what)
+    {
+        var bar = list.Commands.OfType<BRenderCommand.FillRoundedRect>()
+            .Where(command => command.Rect.Width == 12 && command.Rect.Height > command.Rect.Width &&
+                command.Rect.Right <= box.Right && command.Rect.Left >= box.Right - 20)
+            .ToArray();
+        Assert.True(bar.Length == 2, $"{what}: expected a track and a thumb, found {bar.Length} bar fills");
+        Assert.True(bar[1].Rect.Height < bar[0].Rect.Height, $"{what}: the thumb is shorter than its track");
+        return (bar[0].Color, bar[1].Color);
     }
 
     [Fact]
