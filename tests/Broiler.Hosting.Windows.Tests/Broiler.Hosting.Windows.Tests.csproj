@@ -26,8 +26,10 @@
     <PackageReference Include="Broiler.UI.ListView.Standard" />
     <PackageReference Include="Broiler.UI.Panel.Standard" />
     <PackageReference Include="Broiler.UI.RichEdit.Standard" />
+    <PackageReference Include="Broiler.UI.ScrollView.Standard" />
     <PackageReference Include="Broiler.UI.SpinBox.Standard" />
     <PackageReference Include="Broiler.UI.ToggleButton.Standard" />
     <PackageReference Include="Broiler.UI.Toolbar.Standard" />
+    <PackageReference Include="Broiler.UI.TreeView.Standard" />
   </ItemGroup>
 </Project>
