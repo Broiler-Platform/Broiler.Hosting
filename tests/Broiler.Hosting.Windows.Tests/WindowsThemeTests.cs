@@ -14,12 +14,18 @@ using Broiler.UI;
 using Broiler.UI.Button.Standard;
 using Broiler.UI.FormatCodeView.Standard;
 using Broiler.UI.Label.Standard;
+using Broiler.UI.ListView;
+using Broiler.UI.ListView.Standard;
+using Broiler.UI.RichEdit.Standard;
+using Broiler.UI.ScrollView.Standard;
 using Broiler.UI.SpinBox.Standard;
 using Broiler.UI.Standard;
 using Broiler.UI.TabView.Standard;
 using Broiler.UI.ToggleButton;
 using Broiler.UI.ToggleButton.Standard;
 using Broiler.UI.Toolbar.Standard;
+using Broiler.UI.TreeView;
+using Broiler.UI.TreeView.Standard;
 using Microsoft.Win32;
 using Xunit;
 
@@ -163,6 +169,11 @@ public sealed class WindowsThemeTests
         AssertContrast(tokens.FocusRing, tokens.Surface, 3, $"{name}: focus ring");
         AssertContrast(tokens.BorderStrong, tokens.Surface, 3, $"{name}: border");
         AssertContrast(tokens.Accent, tokens.SurfaceDisabled, 3, $"{name}: accent fill on the track");
+        // A scrollbar's thumb on its track, and on the window beside the bar, which the thumb's sides meet. The bars
+        // are checked as the controls draw them, in custom themes too, in
+        // Scrollbar_Thumbs_Stand_Out_From_Their_Track_And_The_Window_As_The_Controls_Draw_Them.
+        AssertContrast(tokens.ScrollbarThumb, tokens.ScrollbarTrack, 3, $"{name}: scrollbar thumb on its track");
+        AssertContrast(tokens.ScrollbarThumb, tokens.Surface, 3, $"{name}: scrollbar thumb on the window");
     }
 
     [Theory]
@@ -355,6 +366,51 @@ public sealed class WindowsThemeTests
         }
     }
 
+    [Theory]
+    [MemberData(nameof(ContrastThemes))]
+    [MemberData(nameof(CustomContrastThemes))]
+    // A custom contrast theme whose buttons are drawn the other way round: its button text is the window color, where a
+    // thumb in it would not show.
+    [InlineData("Custom, button text in the window color", new uint[] { 0x000000, 0xFFFFFF, 0xD6B4FD, 0x2B2B2B, 0xFFFFFF, 0x000000, 0xA6A6A6, 0x8080FF }, true)]
+    public void Scrollbar_Thumbs_Stand_Out_From_Their_Track_And_The_Window_As_The_Controls_Draw_Them(string name, uint[] rgb, bool dark)
+    {
+        var colors = Colors(rgb);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors);
+        Assert.Equal(dark, tokens.IsDark);
+        Assert.Equal((colors.Window, colors.WindowText), (tokens.ScrollbarTrack, tokens.ScrollbarThumb));
+        Assert.True(tokens.ScrollbarThumbContrast >= 3, $"{name}: scrollbar thumb at {tokens.ScrollbarThumbContrast:0.00}:1");
+
+        var box = new BRect(0, 0, 240, 120);
+        foreach (var (control, element) in ScrollingControls(tokens))
+        {
+            using var view = new StateView(element, box);
+            var (track, thumb) = VerticalBar(view.Render(), box, $"{name}: {control}");
+            Assert.Equal((tokens.ScrollbarTrack, tokens.ScrollbarThumb), (track, thumb));
+            AssertContrast(thumb, track, 3, $"{name}: {control} scrollbar thumb on its track");
+            AssertContrast(thumb, tokens.Surface, 3, $"{name}: {control} scrollbar thumb on the window");
+        }
+    }
+
+    [Theory]
+    [InlineData("Aquatic")]
+    [InlineData("Desert")]
+    [InlineData("Dusk")]
+    public void A_Copy_That_Clears_The_High_Contrast_Flag_Keeps_The_Bars(string name)
+    {
+        // Without the flag, a scroll view, rich edit or format code view draws a theme's bars only where the theme sets
+        // the roles, or where its window and window text sit at the extremes of lightness, as Night sky's black and
+        // white do and these three do not. Otherwise it goes back to its translucent bars.
+        var colors = Named(name);
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors) with { IsHighContrast = false };
+
+        var box = new BRect(0, 0, 240, 120);
+        foreach (var (control, element) in ScrollingControls(tokens))
+        {
+            using var view = new StateView(element, box);
+            Assert.Equal((colors.Window, colors.WindowText), VerticalBar(view.Render(), box, $"{name}: {control}"));
+        }
+    }
+
     [Fact]
     public void The_States_Keep_The_Highlight_Pair_In_A_Copy_That_Recolors_The_Selection()
     {
@@ -443,6 +499,34 @@ public sealed class WindowsThemeTests
         Assert.Equal(colors.Highlight, tokens.AccentText);
     }
 
+    [Fact]
+    public void The_Scrollbar_Thumb_Is_The_Window_Text_Like_Every_Control_At_Rest()
+    {
+        // WinUI draws a thumb in the button text color, as it draws its buttons. Broiler.UI has no button roles, so this
+        // palette draws buttons, borders and text in the window text color, and the thumb matches them, in Desert, Dusk
+        // and Night sky too, whose button text is another color.
+        foreach (var named in new[] { WindowsSystemColors.Aquatic, WindowsSystemColors.Desert, WindowsSystemColors.Dusk, WindowsSystemColors.NightSky })
+        {
+            var palette = WindowsTheme.CreateHighContrastTheme(named);
+            Assert.Equal((named.Window, named.WindowText), (palette.ScrollbarTrack, palette.ScrollbarThumb));
+            Assert.Equal(new[] { palette.Text, palette.BorderStrong }, new[] { palette.ScrollbarThumb, palette.ScrollbarThumb });
+        }
+        Assert.NotEqual(WindowsSystemColors.NightSky.WindowText, WindowsSystemColors.NightSky.ButtonText);
+    }
+
+    [Fact]
+    public void The_Scrollbars_Are_Kept_In_A_Copy_That_Recolors_The_Disabled_Surface_And_The_Strong_Border()
+    {
+        var colors = WindowsSystemColors.NightSky;
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors) with
+        {
+            SurfaceDisabled = BColor.FromArgb(0xFF, 0x20, 0x20, 0x20),
+            BorderStrong = BColor.FromArgb(0xFF, 0x80, 0x80, 0x80),
+        };
+
+        Assert.Equal((colors.Window, colors.WindowText), (tokens.ScrollbarTrack, tokens.ScrollbarThumb));
+    }
+
     [Theory]
     [InlineData(1.0)]
     [InlineData(1.5)]
@@ -529,6 +613,46 @@ public sealed class WindowsThemeTests
         AssertContrast(drawn.Text, drawn.Fill, 4.5, what);
     }
 
+    /// <summary>
+    /// A control of each kind that draws scrollbars, themed with <paramref name="tokens"/>, each holding more than a
+    /// 240 by 120 box shows, so it draws its vertical bar. The scroll view (Mail's forms, status areas and message
+    /// header), the rich edit (Mail's composer and reading pane) and the format code view draw the theme's bars once
+    /// it gives scrollbars colors, as a contrast palette does; the list and the tree draw them in every theme. The
+    /// code editor draws its bars through StandardScrollbars, as the tree does.
+    /// </summary>
+    private static (string Control, UiElement Element)[] ScrollingControls(StandardThemeTokens tokens)
+    {
+        string lines = string.Join('\n', Enumerable.Range(0, 60).Select(line => $"line {line}"));
+        var scrollView = new StandardScrollView();
+        scrollView.AddChild(new TallContent());
+        var edit = new StandardRichEdit();
+        edit.SetPlainText(lines);
+        var codes = new StandardFormatCodeView { Projection = FormatCodeProjector.Project(RichTextDocument.FromPlainText(lines)) };
+        var list = new StandardListView();
+        list.SetItems(Enumerable.Range(0, 60).Select(index => new UiListItem($"item{index}", $"Item {index}")).ToArray());
+        var tree = new StandardTreeView { DataSource = new FlatTreeSource(60) };
+
+        (string, UiElement)[] controls = [("scroll view", scrollView), ("rich edit", edit), ("format code view", codes), ("list", list), ("tree", tree)];
+        foreach (var (_, element) in controls)
+            ((IStandardThemedControl)element).ApplyTheme(tokens);
+        return controls;
+    }
+
+    /// <summary>
+    /// The track and thumb of the vertical bar along the right edge of <paramref name="box"/>: the two fills a bar's
+    /// width (12) wide and taller than wide there, the track first.
+    /// </summary>
+    private static (BColor Track, BColor Thumb) VerticalBar(BRenderList list, BRect box, string what)
+    {
+        var bar = list.Commands.OfType<BRenderCommand.FillRoundedRect>()
+            .Where(command => command.Rect.Width == 12 && command.Rect.Height > command.Rect.Width &&
+                command.Rect.Right <= box.Right && command.Rect.Left >= box.Right - 20)
+            .ToArray();
+        Assert.True(bar.Length == 2, $"{what}: expected a track and a thumb, found {bar.Length} bar fills");
+        Assert.True(bar[1].Rect.Height < bar[0].Rect.Height, $"{what}: the thumb is shorter than its track");
+        return (bar[0].Color, bar[1].Color);
+    }
+
     [Fact]
     public void Title_Bar_Rejects_Missing_Or_Invalid_Windows()
     {
@@ -586,6 +710,22 @@ public sealed class WindowsThemeTests
     {
         static BColor C(uint value) => new((byte)(value >> 16), (byte)(value >> 8), (byte)value, 255);
         return new(C(rgb[0]), C(rgb[1]), C(rgb[2]), C(rgb[3]), C(rgb[4]), C(rgb[5]), C(rgb[6]), C(rgb[7]));
+    }
+
+    /// <summary>Content taller than a scroll view shows.</summary>
+    private sealed class TallContent : UiElement
+    {
+        protected override BSize MeasureCore(BSize availableSize) => new(80, 1000);
+    }
+
+    /// <summary>A tree of <paramref name="count"/> nodes under its root, none with children.</summary>
+    private sealed class FlatTreeSource(int count) : ITreeDataSource
+    {
+        public TreeNodeId Root => new("/");
+        public int GetChildCount(TreeNodeId node) => node.Value == "/" ? count : 0;
+        public TreeNodeId GetChild(TreeNodeId node, int index) => new($"/node{index}");
+        public bool CanExpand(TreeNodeId node) => GetChildCount(node) > 0;
+        public TreeNodePresentation GetPresentation(TreeNodeId node) => new(node, node.Value[1..]);
     }
 
     /// <summary>A session showing one control in a fixed box, and a mouse to work it with.</summary>
