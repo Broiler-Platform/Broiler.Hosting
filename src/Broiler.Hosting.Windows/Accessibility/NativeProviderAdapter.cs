@@ -15,11 +15,22 @@ internal sealed partial class NativeProviderAdapter(IRawElementProviderSimple ta
     internal static NativeProviderAdapter? For(IRawElementProviderSimple? target) =>
         target is null ? null : Adapters.GetValue(target, static provider => new(provider));
 
+    /// <summary>The wrapper already made for <paramref name="target"/>, without making one.</summary>
+    internal static NativeProviderAdapter? Existing(IRawElementProviderSimple target) =>
+        Adapters.TryGetValue(target, out NativeProviderAdapter? adapter) ? adapter : null;
+
     private IRawElementProviderFragment Fragment => (IRawElementProviderFragment)target;
     private WindowsAutomationBridge Bridge => target is WindowsAutomationBridge bridge ? bridge
         : ((WindowsElementAutomationPeer)target).Bridge;
-    private T Read<T>(Func<T> read) => Bridge.OnUiThread(read);
-    private void Change(Action change) => Bridge.OnUiThread(() => { change(); return true; });
+
+    // A peer whose element was removed, disposed or detached, or whose item or tab is gone, answers
+    // every call with UIA_E_ELEMENTNOTAVAILABLE, so a client drops it instead of reading stale state.
+    private T Read<T>(Func<T> read) => Bridge.OnUiThread(() =>
+    {
+        if (target is WindowsElementAutomationPeer { IsAlive: false }) throw AutomationInterop.ElementNotAvailableException();
+        return read();
+    });
+    private void Change(Action change) => Read(() => { change(); return true; });
 
     ProviderOptions INativeSimple.GetProviderOptions() => ProviderOptions.ServerSideProvider | ProviderOptions.UseComThreading;
     unsafe nint INativeSimple.GetPatternProvider(int id) => Read(() =>

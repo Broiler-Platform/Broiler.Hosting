@@ -14,6 +14,7 @@
     <PackageVersion Include="Broiler.UI.ComboBox" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ComboBox.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Edit" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.Forms.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Label.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Edit.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.FormatCodeView.Standard" Version="$(BroilerUiVersion)" />
@@ -28,6 +29,7 @@
     <PackageVersion Include="Broiler.UI.TabView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.ToggleButton.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="$(BroilerUiVersion)" />
+    <PackageVersion Include="Broiler.UI.TreeView" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="$(BroilerUiVersion)" />
     <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Graphics.Windows" Version="$(BroilerGraphicsVersion)" />
