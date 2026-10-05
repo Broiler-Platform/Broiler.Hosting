@@ -74,3 +74,8 @@ Application-specific concerns (close/save guards, draft persistence, credential 
 dotnet test Broiler.Hosting.slnx
 ```
 All unit tests in `tests/Broiler.Hosting.Windows.Tests`, `tests/Broiler.Hosting.Linux.Tests`, and `tests/Broiler.Hosting.Android.Tests` run headlessly and validate clipboard safety, sizing/DPI, system theme queries, input fidelity, backend diagnostics, and accessibility trees across platforms.
+
+## Documentation
+
+- [Release notes for 0.1.0-preview.7](docs/release-notes-0.1.0-preview.7.md): the release candidate of 5 October 2026 (not yet published; it requires Broiler.UI 0.1.0-preview.18), with compatibility notes for consumers, verification, and release steps.
+- [Open follow-ups, 5 October 2026](docs/open-follow-ups-2026-10-05.md): Hosting work left open by that round, including decisions for the owner and checks that need a person or hardware.
