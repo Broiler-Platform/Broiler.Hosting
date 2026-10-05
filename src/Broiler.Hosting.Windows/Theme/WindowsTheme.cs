@@ -41,7 +41,9 @@ public static class WindowsTheme
     /// color only when it stands out from the window background (3:1), and falls back to the window text
     /// color otherwise. Text drawn in the accent (<c>AccentText</c>) is drawn on the window color, so it
     /// uses the highlight color only when that reads there (4.5:1) and the highlight text is not the window
-    /// text, and the window text color otherwise.
+    /// text, and the window text color otherwise. Scrollbars draw their thumb in the button text color on a track of
+    /// the window color, as Windows does, and in the window text color where the button text does not stand out from
+    /// the window (3:1).
     /// Status colors that Windows does not define keep the high-contrast preset values where they are
     /// readable on the window background (4.5:1), and fall back to the window text color otherwise;
     /// the link color does the same with the system hyperlink color. The palette is flagged as high
@@ -85,12 +87,23 @@ public static class WindowsTheme
     /// so the accent text then takes the window text color too, which reads on the window and, as the highlight
     /// text, on the highlight.
     /// </para>
+    /// <para>
+    /// <c>ScrollbarTrack</c> and <c>ScrollbarThumb</c> color the bars of every Broiler.UI control that scrolls.
+    /// In a Windows 11 contrast theme, as WinUI's resources for one give it, a scrollbar's thumb is ButtonText on a
+    /// track of the Window color, Highlight while it is hovered or pressed, and GrayText while the bar is disabled.
+    /// Broiler.UI has no role for a hovered, pressed, or disabled thumb, so those look like the thumb at rest. A thumb
+    /// is as wide as its track, so its sides meet the window beside the bar too, and the track is the window color:
+    /// the thumb needs 3:1 on the window color alone. In the four Windows 11 themes the button text gives it 10.8:1
+    /// (Dusk) to 17.5:1 (Night sky). A custom theme's button text is chosen for its button face, which need not be
+    /// the window color, so where it stands out from the window less than 3:1 the thumb takes the window text color.
+    /// </para>
     /// </remarks>
     public static StandardThemeTokens CreateHighContrastTheme(WindowsSystemColors colors, UiSystemSettings? settings = null)
     {
         bool dark = RelativeLuminance(colors.Window) < RelativeLuminance(colors.WindowText);
         var preset = dark ? StandardThemeTokens.HighContrastDark : StandardThemeTokens.HighContrastLight;
         var focus = ContrastRatio(colors.Highlight, colors.Window) >= 3 ? colors.Highlight : colors.WindowText;
+        var thumb = ContrastRatio(colors.ButtonText, colors.Window) >= 3 ? colors.ButtonText : colors.WindowText;
         var tokens = preset with
         {
             Name = "HighContrastSystem",
@@ -121,6 +134,10 @@ public static class WindowsTheme
             // selection, so a copy that recolors the selection keeps it.
             StateFill = colors.Highlight,
             StateText = colors.HighlightText,
+            // Every scrollbar as Windows 11 draws one in a contrast theme (the remarks give the source). Set, not left
+            // to follow the disabled surface and the strong border, so a copy that recolors those keeps the bars.
+            ScrollbarTrack = colors.Window,
+            ScrollbarThumb = thumb,
             FocusRing = focus,
             Success = ReadableOnWindow(preset.Success, colors),
             Warning = ReadableOnWindow(preset.Warning, colors),

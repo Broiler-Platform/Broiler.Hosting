@@ -489,6 +489,42 @@ public sealed class WindowsThemeTests
         Assert.Equal(colors.Highlight, tokens.AccentText);
     }
 
+    [Fact]
+    public void The_Scrollbar_Thumb_Is_The_Button_Text_Where_It_Stands_Out_From_The_Window()
+    {
+        // Windows draws a scrollbar's thumb in the button text color, which in Desert, Dusk and Night sky is not the
+        // window text color, on a track of the window color.
+        foreach (var named in new[] { WindowsSystemColors.Aquatic, WindowsSystemColors.Desert, WindowsSystemColors.Dusk, WindowsSystemColors.NightSky })
+        {
+            var palette = WindowsTheme.CreateHighContrastTheme(named);
+            Assert.Equal((named.Window, named.ButtonText), (palette.ScrollbarTrack, palette.ScrollbarThumb));
+        }
+
+        // A custom theme's button text is chosen for its button face, here black on a white window. At 3:1 on the window
+        // it still stands out as a thumb; just under that, the thumb takes the window text color.
+        var standsOut = Colors([0xFFFFFF, 0x000000, 0x0000A0, 0xFFFFFF, 0x000000, 0x949494, 0x6D6D6D, 0x0000EE]);
+        Assert.InRange(WindowsTheme.ContrastRatio(standsOut.ButtonText, standsOut.Window), 3, 3.1);
+        Assert.Equal(standsOut.ButtonText, WindowsTheme.CreateHighContrastTheme(standsOut).ScrollbarThumb);
+
+        var blendsIn = Colors([0xFFFFFF, 0x000000, 0x0000A0, 0xFFFFFF, 0x000000, 0x959595, 0x6D6D6D, 0x0000EE]);
+        Assert.InRange(WindowsTheme.ContrastRatio(blendsIn.ButtonText, blendsIn.Window), 2.9, 2.999);
+        var tokens = WindowsTheme.CreateHighContrastTheme(blendsIn);
+        Assert.Equal((blendsIn.Window, blendsIn.WindowText), (tokens.ScrollbarTrack, tokens.ScrollbarThumb));
+    }
+
+    [Fact]
+    public void The_Scrollbars_Are_Kept_In_A_Copy_That_Recolors_The_Disabled_Surface_And_The_Strong_Border()
+    {
+        var colors = WindowsSystemColors.NightSky;
+        var tokens = WindowsTheme.CreateHighContrastTheme(colors) with
+        {
+            SurfaceDisabled = BColor.FromArgb(0xFF, 0x20, 0x20, 0x20),
+            BorderStrong = BColor.FromArgb(0xFF, 0x80, 0x80, 0x80),
+        };
+
+        Assert.Equal((colors.Window, colors.ButtonText), (tokens.ScrollbarTrack, tokens.ScrollbarThumb));
+    }
+
     [Theory]
     [InlineData(1.0)]
     [InlineData(1.5)]
