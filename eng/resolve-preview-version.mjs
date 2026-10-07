@@ -95,7 +95,7 @@ async function main() {
   const version = chooseVersion(configured, published, {
     suffix: process.env.VERSION_SUFFIX || '', tag,
   });
-  console.log(`Version: ${version} -> ${target} (${packageIds.length} packages; dry-run: ${process.env.DRY_RUN ?? 'true'})`);
+  console.log(`Version: ${version} -> ${target} (${packageIds.length} packages)`);
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT,
       `version=${version}\nversion_args=-p:Version=${version} -p:PackageVersion=${version}\n`);
