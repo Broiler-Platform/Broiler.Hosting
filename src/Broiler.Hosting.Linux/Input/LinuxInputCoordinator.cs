@@ -44,6 +44,7 @@ public sealed class LinuxInputCoordinator : IAsyncDisposable
     private bool _initialized;
     private bool _disposed;
     private bool _pointerInitialized;
+    private bool _quitRequested;
     private BSize _viewport = new(1120, 780);
     private double _pointerX = 560;
     private double _pointerY = 390;
@@ -61,6 +62,26 @@ public sealed class LinuxInputCoordinator : IAsyncDisposable
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _externalPointer = externalPointer;
         _applicationName = string.IsNullOrWhiteSpace(applicationName) ? "Broiler Linux" : applicationName;
+    }
+
+    /// <summary>
+    /// Whether an Escape key press asks the host to exit, through <see cref="QuitRequested"/>.
+    /// Off by default: Escape is then only an ordinary key event for the UI, and the
+    /// application closes through its own command.
+    /// </summary>
+    public bool QuitOnEscape { get; init; }
+
+    /// <summary>
+    /// Whether Escape has been pressed while <see cref="QuitOnEscape"/> is set. The host loop
+    /// polls it and exits; it never resets. The Escape key event is still dispatched.
+    /// </summary>
+    public bool QuitRequested
+    {
+        get
+        {
+            lock (_gate)
+                return _quitRequested;
+        }
     }
 
     public LinuxInputSnapshot Snapshot
@@ -193,7 +214,9 @@ public sealed class LinuxInputCoordinator : IAsyncDisposable
         lock (_gate)
             _initialized = true;
 
-        _log("evdev input opened. Events run only while the X11 window is focused; use File > Exit to close " + _applicationName + ".");
+        _log(QuitOnEscape
+            ? "evdev input opened. Events run only while the X11 window is focused; Escape exits " + _applicationName + "."
+            : "evdev input opened. Events run only while the X11 window is focused; use File > Exit to close " + _applicationName + ".");
     }
 
     public async ValueTask SetActiveAsync(bool active, CancellationToken cancellationToken = default)
@@ -326,7 +349,7 @@ public sealed class LinuxInputCoordinator : IAsyncDisposable
         return null;
     }
 
-    private void OnKeyChanged(KeyboardKeyEvent inputEvent)
+    internal void OnKeyChanged(KeyboardKeyEvent inputEvent)
     {
         KeyboardKeyEvent normalized = NormalizeKeyboardEvent(inputEvent);
         lock (_gate)
@@ -344,6 +367,12 @@ public sealed class LinuxInputCoordinator : IAsyncDisposable
             _keyEvents++;
             if (text.Length > 0)
                 _textEvents++;
+            if (QuitOnEscape &&
+                normalized.Transition == KeyboardKeyTransition.Down &&
+                normalized.Key.Name.Equals("Escape", StringComparison.Ordinal))
+            {
+                _quitRequested = true;
+            }
         }
     }
 
