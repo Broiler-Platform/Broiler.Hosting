@@ -6,6 +6,8 @@ using Broiler.Graphics.Rendering;
 using Broiler.Graphics.RenderList;
 using Broiler.Graphics.Resources;
 using Broiler.Hosting.Linux;
+using Broiler.Input;
+using Broiler.Input.Keyboard;
 using Broiler.UI;
 using Xunit;
 
@@ -140,4 +142,37 @@ public sealed class LinuxHostingTests
         Assert.Equal(250, snapshot.PointerX);
         Assert.Equal(300, snapshot.PointerY);
     }
+
+    [Fact]
+    public void LinuxInputCoordinator_EscapeRequestsQuitOnlyWhenOptedIn()
+    {
+        var defaultCoordinator = new LinuxInputCoordinator(enabled: true, log: _ => { });
+        defaultCoordinator.OnKeyChanged(Key("Escape", KeyboardKeyTransition.Down));
+        Assert.False(defaultCoordinator.QuitOnEscape);
+        Assert.False(defaultCoordinator.QuitRequested);
+
+        var coordinator = new LinuxInputCoordinator(enabled: true, log: _ => { }) { QuitOnEscape = true };
+        coordinator.OnKeyChanged(Key("A", KeyboardKeyTransition.Down));
+        coordinator.OnKeyChanged(Key("Escape", KeyboardKeyTransition.Up));
+        Assert.False(coordinator.QuitRequested);
+
+        coordinator.OnKeyChanged(Key("Escape", KeyboardKeyTransition.Down));
+        Assert.True(coordinator.QuitRequested);
+
+        // The key still reaches the UI; quitting is the host's decision.
+        var events = new System.Collections.Generic.List<UiInputEvent>();
+        coordinator.Drain(events.Add);
+        Assert.Contains(events, e => e.Kind == UiInputEventKind.KeyboardKey);
+    }
+
+    private static KeyboardKeyEvent Key(string name, KeyboardKeyTransition transition) => new(
+        new InputEventHeader(InputDeviceId.FromOpaqueValue("test:keyboard"), new InputTimestamp(0, 1, "test"), 0),
+        KeyboardKey.FromName(name),
+        transition,
+        default,
+        NativeKeyCode: 0,
+        ScanCode: 0,
+        RepeatCount: 0,
+        IsExtended: false,
+        WasDown: false);
 }

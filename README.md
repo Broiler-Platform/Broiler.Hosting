@@ -42,7 +42,7 @@ Provides Linux desktop hosting facilities:
 - **`LinuxUiHost`**: Reusable `IUiHost` implementation adapting `IBroilerRenderer` and `IBroilerSurface` to Broiler UI sessions, tracking viewport dimensions, DPI scale, frame indexing, and invalidations without double-scaling.
 - **`LinuxX11Clipboard`**: Hardened X11 clipboard and primary selection host (`IUiClipboardHost`, `IDisposable`) with 1 MB payload limits, `INCR` streaming, UTF-8/Latin-1 conversion, timeout bounds, and safe non-Linux execution guards.
 - **`LinuxBackendDiagnostics`**: Preflight verification for X11/EGL/OpenGL dependencies (`libEGL.so.1`, `libGL.so.1`, `libOpenGL.so.0`, `libX11.so.6`, `DISPLAY`, architecture).
-- **`LinuxInputCoordinator` & `LinuxInputSnapshot`**: Evdev input stream coordination unifying keyboard and mouse devices, merging modifier keys across separate evdev nodes, pointer clamping, and non-blocking event dispatch.
+- **`LinuxInputCoordinator` & `LinuxInputSnapshot`**: Evdev input stream coordination unifying keyboard and mouse devices, merging modifier keys across separate evdev nodes, pointer clamping, and non-blocking event dispatch. Set `QuitOnEscape = true` to have an Escape press raise `QuitRequested` for the host loop (off by default).
 
 ### `Broiler.Hosting.Android`
 Provides Android hosting facilities with multi-targeting support (`net10.0` for headless testing and `net10.0-android36.0` for full runtime integration):
@@ -75,7 +75,12 @@ dotnet test Broiler.Hosting.slnx
 ```
 All unit tests in `tests/Broiler.Hosting.Windows.Tests`, `tests/Broiler.Hosting.Linux.Tests`, and `tests/Broiler.Hosting.Android.Tests` run headlessly and validate clipboard safety, sizing/DPI, system theme queries, input fidelity, backend diagnostics, and accessibility trees across platforms.
 
+## Publishing
+
+CI (`.github/workflows/ci.yml`) builds and tests `Release` on Ubuntu and Windows, then on Windows packs and verifies every package, checks a fresh consumer restore of them from nuget.org (`eng/verify-feed.ps1`), and attaches them as `nuget-packages`. **Publish** (`.github/workflows/publish.yml`, manual or a `v0.1.0-preview.N` tag) resolves the next preview version (one past the highest `0.1.0-preview.N` on nuget.org, see `eng/resolve-preview-version.mjs`), builds, tests, packs, verifies the consumer restore, and pushes the packages and their symbols to nuget.org with the `NUGET_TOKEN` (or `NUGET_API_KEY`) secret. Every Publish run pushes; there is no dry-run mode and no other feed. The no-push rehearsal is CI itself, on every push and pull request.
+
 ## Documentation
 
+- [Release notes for 0.1.0-preview.8](docs/release-notes-0.1.0-preview.8.md): opt-in Escape-to-quit on `LinuxInputCoordinator` (`QuitOnEscape`, `QuitRequested`) and the X11 clipboard tests adopted from the applications.
 - [Release notes for 0.1.0-preview.7](docs/release-notes-0.1.0-preview.7.md): the release candidate of 5 October 2026 (not yet published; it requires Broiler.UI 0.1.0-preview.18), with compatibility notes for consumers, verification, and release steps.
 - [Open follow-ups, 5 October 2026](docs/open-follow-ups-2026-10-05.md): Hosting work left open by that round, including decisions for the owner and checks that need a person or hardware.

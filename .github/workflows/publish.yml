@@ -7,10 +7,6 @@ on:
         description: 'Optional preview.N (unused and at least the next preview). Empty selects automatically.'
         type: string
         default: ''
-      dry-run:
-        description: Validate and attach packages without pushing to the feed
-        type: boolean
-        default: true
   push:
     tags: ['v*']
 
@@ -28,8 +24,6 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      DRY_RUN: ${{ github.event_name == 'push' && 'false' || inputs.dry-run }}
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -48,7 +42,6 @@ jobs:
           node-version: '24'
 
       - name: Require a NuGet.org API key
-        if: env.DRY_RUN != 'true'
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_TOKEN || secrets.NUGET_API_KEY }}
         run: |
@@ -83,12 +76,13 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
-      - name: Verify consumer restore from the destination feed
+      - name: Verify consumer restore from nuget.org
         shell: pwsh
         run: ./eng/verify-feed.ps1 -Target nuget
 
+      # Pushing the .nupkg files also pushes the matching .snupkg symbol packages.
+      # --skip-duplicate lets a re-run finish a push that stopped between packages.
       - name: Push to NuGet.org
-        if: env.DRY_RUN != 'true'
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_TOKEN || secrets.NUGET_API_KEY }}
@@ -99,7 +93,7 @@ jobs:
           }
           foreach ($pkg in $packages) {
             Write-Host "Pushing $($pkg.Name)..."
-            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
+            dotnet nuget push $pkg.FullName --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY --skip-duplicate
             if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
             }
@@ -110,11 +104,7 @@ jobs:
           {
             echo "### Broiler.Hosting ${{ steps.version.outputs.version }}"
             echo
-            if [ "$DRY_RUN" = "true" ]; then
-              echo 'Dry run: validated packages are attached; nothing was pushed.'
-            else
-              echo 'Published to NuGet.org.'
-            fi
+            echo 'Published to NuGet.org.'
             echo
             echo '```'
             ls -1 artifacts

@@ -366,8 +366,9 @@ Broiler.UI local.7 and Native preview.7:
 4. Merge into `main`. The branch history contains `683823d` (scrollbar thumb in ButtonText) followed
    by `bd1799e` (back to WindowText); squashing at merge keeps the log from describing a change that
    was reverted.
-5. Publish 0.1.0-preview.7 with the Publish workflow (`.github/workflows/publish.yml`), as a dry run
-   first, and check that the resolved version is 0.1.0-preview.7.
+5. Publish 0.1.0-preview.7 with the Publish workflow (`.github/workflows/publish.yml`), and check
+   that the resolved version is 0.1.0-preview.7. (The workflow has since lost its dry-run mode:
+   every run pushes, and CI is the no-push rehearsal.)
 6. Consumers: Broiler.Mail rebuilds its adoption branch against the published Broiler.UI
    preview.18 and Hosting preview.7 and reruns its suite, Accept-UI (default, dusk, aquatic),
    Accept-Refresh and Probe-Uia before merging.
