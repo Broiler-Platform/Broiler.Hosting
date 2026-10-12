@@ -5,40 +5,46 @@
     <BroilerGraphicsVersion>0.1.0-preview.7</BroilerGraphicsVersion>
     <BroilerNativeVersion>0.1.0-preview.6</BroilerNativeVersion>
     <BroilerInputVersion>0.1.0-preview.5</BroilerInputVersion>
+    <!-- Printing: IUiPrintHost and the print controls arrive in Broiler.UI 0.1.0-preview.21, the
+         page model in Broiler.Graphics 0.1.0-preview.13, and the spooler and CUPS bindings in
+         Broiler.Native 0.1.0-preview.9. Properties, so a build against local packs can name them. -->
+    <BroilerUiPackageVersion Condition="'$(BroilerUiPackageVersion)' == ''">0.1.0-preview.21</BroilerUiPackageVersion>
+    <BroilerGraphicsPackageVersion Condition="'$(BroilerGraphicsPackageVersion)' == ''">0.1.0-preview.13</BroilerGraphicsPackageVersion>
+    <BroilerNativePackageVersion Condition="'$(BroilerNativePackageVersion)' == ''">0.1.0-preview.9</BroilerNativePackageVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Broiler.UI" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Button" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Button.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.ComboBox" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.ComboBox.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Edit" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Forms.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Label.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Edit.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.FormatCodeView.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.ListView" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.ListView.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Panel.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.RichEdit" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.RichEdit.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.SpinBox.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.TabView" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.TabView.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.ToggleButton.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.TreeView" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="0.1.0-preview.20" />
-    <PackageVersion Include="Broiler.Graphics" Version="0.1.0-preview.12" />
+    <PackageVersion Include="Broiler.UI" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Button" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Button.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.ComboBox" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.ComboBox.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Edit" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Forms.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Label.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Edit.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.FormatCodeView.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.ListView" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.ListView.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Panel.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.RichEdit" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.RichEdit.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.SpinBox.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.TabView" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.TabView.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.ToggleButton.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.TreeView" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="$(BroilerUiPackageVersion)" />
+    <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsPackageVersion)" />
     <PackageVersion Include="Broiler.Graphics.Windows" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Graphics.Android" Version="$(BroilerGraphicsVersion)" />
-    <PackageVersion Include="Broiler.Native" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Broiler.Native.Windows" Version="0.1.0-preview.8" />
-    <PackageVersion Include="Broiler.Native.Linux" Version="0.1.0-preview.8" />
+    <PackageVersion Include="Broiler.Native" Version="$(BroilerNativePackageVersion)" />
+    <PackageVersion Include="Broiler.Native.Windows" Version="$(BroilerNativePackageVersion)" />
+    <PackageVersion Include="Broiler.Native.Linux" Version="$(BroilerNativePackageVersion)" />
     <PackageVersion Include="Broiler.Native.Android" Version="$(BroilerNativeVersion)" />
     <PackageVersion Include="Broiler.Input" Version="0.1.0-preview.6" />
     <PackageVersion Include="Broiler.Input.Keyboard" Version="0.1.0-preview.6" />
