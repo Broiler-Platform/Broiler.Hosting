@@ -5,10 +5,10 @@
     <BroilerGraphicsVersion>0.1.0-preview.7</BroilerGraphicsVersion>
     <BroilerNativeVersion>0.1.0-preview.6</BroilerNativeVersion>
     <BroilerInputVersion>0.1.0-preview.5</BroilerInputVersion>
-    <!-- Printing: IUiPrintHost and the print controls arrive in Broiler.UI 0.1.0-preview.21, the
+    <!-- Printing: IUiPrintHost and the print controls arrive in Broiler.UI 0.1.0-preview.22, the
          page model in Broiler.Graphics 0.1.0-preview.13, and the spooler and CUPS bindings in
          Broiler.Native 0.1.0-preview.9. Properties, so a build against local packs can name them. -->
-    <BroilerUiPackageVersion Condition="'$(BroilerUiPackageVersion)' == ''">0.1.0-preview.21</BroilerUiPackageVersion>
+    <BroilerUiPackageVersion Condition="'$(BroilerUiPackageVersion)' == ''">0.1.0-preview.22</BroilerUiPackageVersion>
     <BroilerGraphicsPackageVersion Condition="'$(BroilerGraphicsPackageVersion)' == ''">0.1.0-preview.13</BroilerGraphicsPackageVersion>
     <BroilerNativePackageVersion Condition="'$(BroilerNativePackageVersion)' == ''">0.1.0-preview.9</BroilerNativePackageVersion>
   </PropertyGroup>
