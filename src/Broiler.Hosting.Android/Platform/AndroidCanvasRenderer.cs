@@ -112,6 +112,30 @@ public sealed class AndroidCanvasRenderer : IBroilerRenderer
         return true;
     }
 
+    /// <summary>
+    /// Replays <paramref name="renderList"/> onto a canvas the caller owns - a page of a
+    /// <c>PrintedPdfDocument</c>, a bitmap - in that canvas's own units, with no clear and no
+    /// scale. The canvas's state is restored afterwards.
+    /// </summary>
+    public void Draw(Canvas canvas, BRenderList renderList)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(canvas);
+        ArgumentNullException.ThrowIfNull(renderList);
+        renderList.Validate();
+
+        int save = canvas.Save();
+        try
+        {
+            foreach (BRenderCommand command in renderList.Commands)
+                Replay(canvas, command);
+        }
+        finally
+        {
+            canvas.RestoreToCount(save);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
