@@ -38,9 +38,9 @@
     <PackageVersion Include="Broiler.UI.TreeView" Version="$(BroilerUiPackageVersion)" />
     <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="$(BroilerUiPackageVersion)" />
     <PackageVersion Include="Broiler.Graphics" Version="$(BroilerGraphicsPackageVersion)" />
-    <PackageVersion Include="Broiler.Graphics.Windows" Version="0.1.0-preview.12" />
-    <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.12" />
-    <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="0.1.0-preview.12" />
+    <PackageVersion Include="Broiler.Graphics.Windows" Version="0.1.0-preview.13" />
+    <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.13" />
+    <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="0.1.0-preview.13" />
     <PackageVersion Include="Broiler.Graphics.Android" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Native" Version="$(BroilerNativePackageVersion)" />
     <PackageVersion Include="Broiler.Native.Windows" Version="$(BroilerNativePackageVersion)" />
