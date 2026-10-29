@@ -20,11 +20,14 @@
     <File Path=".github/workflows/publish.yml" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Broiler.Hosting.Contracts/Broiler.Hosting.Contracts.csproj" />
+    <Project Path="src/Broiler.Hosting.WebAssembly/Broiler.Hosting.WebAssembly.csproj" />
     <Project Path="src/Broiler.Hosting.Windows/Broiler.Hosting.Windows.csproj" />
     <Project Path="src/Broiler.Hosting.Linux/Broiler.Hosting.Linux.csproj" />
     <Project Path="src/Broiler.Hosting.Android/Broiler.Hosting.Android.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Broiler.Hosting.WebAssembly.Tests/Broiler.Hosting.WebAssembly.Tests.csproj" />
     <Project Path="tests/Broiler.Hosting.Windows.Tests/Broiler.Hosting.Windows.Tests.csproj" />
     <Project Path="tests/Broiler.Hosting.Linux.Tests/Broiler.Hosting.Linux.Tests.csproj" />
     <Project Path="tests/Broiler.Hosting.Android.Tests/Broiler.Hosting.Android.Tests.csproj" />

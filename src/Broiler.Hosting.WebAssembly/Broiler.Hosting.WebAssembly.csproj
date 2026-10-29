@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Reusable browser document and Canvas input adapters for Broiler.</Description></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Broiler.Hosting.Contracts/Broiler.Hosting.Contracts.csproj" />
+    <None Include="wwwroot/broiler.hosting.webassembly.js" Pack="true" PackagePath="browser/" />
+    <None Include="buildTransitive/Broiler.Hosting.WebAssembly.targets" Pack="true" PackagePath="buildTransitive/" />
+  </ItemGroup>
+</Project>

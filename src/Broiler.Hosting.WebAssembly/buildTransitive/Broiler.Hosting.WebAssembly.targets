@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup Condition="'$(UsingMicrosoftNETSdkWebAssembly)' == 'true' Or '$(RuntimeIdentifier)' == 'browser-wasm'">
+    <Content Include="$(MSBuildThisFileDirectory)../browser/broiler.hosting.webassembly.js" Link="wwwroot/broiler.hosting.webassembly.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

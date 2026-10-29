@@ -4,6 +4,12 @@ Shared desktop and mobile hosting runtime, windowing services, input fidelity, a
 
 ## Components
 
+### `Broiler.Hosting.Contracts` and `Broiler.Hosting.WebAssembly`
+
+Platform-neutral document operations and browser Canvas input/lifecycle adapters.
+See [the browser host contract](docs/browser-host.md) for result semantics,
+interop mapping, packaging and adoption.
+
 ### `Broiler.Hosting.Windows`
 Provides Windows desktop hosting facilities:
 - **`WindowsClipboard`**: Hardened Win32 clipboard integration with 1 MB UTF-16 bounds protection, strict `GlobalSize` validation, direct or lazy HWND owner resolution, and safe OS memory handoff.

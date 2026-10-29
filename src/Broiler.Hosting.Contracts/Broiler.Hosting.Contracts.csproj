@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><Description>Platform-neutral document and event-loop contracts for Broiler hosts.</Description></PropertyGroup>
+</Project>
