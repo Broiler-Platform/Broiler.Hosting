@@ -8,17 +8,17 @@ public class ContractsTests
     [Fact] public async Task PickerCancellationDoesNotProduceADocument()
     {
         var port = new BrowserDocumentPort((_, _) => ValueTask.FromResult(new DocumentOperationResult(DocumentOperationStatus.Cancelled)), (_, _) => throw new NotImplementedException());
-        Assert.Equal(DocumentOperationStatus.Cancelled, (await port.OpenAsync(new(".csv"))).Status);
+        Assert.Equal(DocumentOperationStatus.Cancelled, (await port.OpenAsync(new(".csv"), TestContext.Current.CancellationToken)).Status);
     }
     [Fact] public async Task OversizedProviderResultIsRejected()
     {
         var port = new BrowserDocumentPort((_, _) => ValueTask.FromResult(new DocumentOperationResult(DocumentOperationStatus.Opened, new("large.csv", "text/csv", new byte[4]))), (_, _) => throw new NotImplementedException());
-        Assert.Equal(DocumentOperationStatus.Failed, (await port.OpenAsync(new(".csv", 3))).Status);
+        Assert.Equal(DocumentOperationStatus.Failed, (await port.OpenAsync(new(".csv", 3), TestContext.Current.CancellationToken)).Status);
     }
     [Fact] public async Task PickerNameCannotBecomeAPath()
     {
         var port = new BrowserDocumentPort((_, _) => ValueTask.FromResult(new DocumentOperationResult(DocumentOperationStatus.Opened, new("C:\\private\\file.csv", "text/csv", new byte[] { 1 }))), (_, _) => throw new NotImplementedException());
-        var result = await port.OpenAsync(new(".csv"));
+        var result = await port.OpenAsync(new(".csv"), TestContext.Current.CancellationToken);
         Assert.Equal("file.csv", result.Document!.Name);
         Assert.Equal(new byte[] { 1 }, result.Document.Bytes.ToArray());
     }
@@ -28,7 +28,7 @@ public class ContractsTests
         var port = new BrowserDocumentPort((_, _) => throw new NotImplementedException(), (document, _) => {
             received = document; return ValueTask.FromResult(new DocumentOperationResult(DocumentOperationStatus.DownloadInitiated));
         });
-        Assert.Equal(DocumentOperationStatus.DownloadInitiated, (await port.ExportAsync(new("../sheet.csv", "text/csv", new byte[] { 2 }))).Status);
+        Assert.Equal(DocumentOperationStatus.DownloadInitiated, (await port.ExportAsync(new("../sheet.csv", "text/csv", new byte[] { 2 }), TestContext.Current.CancellationToken)).Status);
         Assert.Equal("sheet.csv", received!.Name);
     }
     [Fact] public async Task CancellationPreventsCallingTransport()

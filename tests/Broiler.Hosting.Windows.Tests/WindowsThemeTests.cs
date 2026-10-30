@@ -235,7 +235,7 @@ public sealed class WindowsThemeTests
         // selected text is the text color, the view draws each selected code in its own color there.
         var codes = new StandardFormatCodeView
         {
-            Projection = FormatCodeProjector.Project(RichTextDocument.FromParagraphs([RichTextParagraph.Create("x", new InlineStyle { Bold = true })])),
+            Projection = FormatCodeProjector.Project(RichTextDocument.FromParagraphs([RichTextParagraph.Create("x", new InlineStyle { Bold = true })]), cancellationToken: TestContext.Current.CancellationToken),
         };
         codes.ApplyTheme(tokens);
         using (var view = new StateView(codes, new BRect(0, 0, 300, 100)))

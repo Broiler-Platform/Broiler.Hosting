@@ -1,24 +1,4 @@
 <Solution>
-  <Folder Name="/solution items/">
-    <File Path="Directory.Build.props" />
-    <File Path="Directory.Packages.props" />
-    <File Path="NuGet.config" />
-    <File Path="LICENSE" />
-    <File Path="README.md" />
-    <File Path=".gitignore" />
-  </Folder>
-  <Folder Name="/solution items/eng/">
-    <File Path="eng/Broiler.Packaging.props" />
-    <File Path="eng/pack.ps1" />
-    <File Path="eng/run-tests.ps1" />
-    <File Path="eng/resolve-preview-version.mjs" />
-    <File Path="eng/resolve-preview-version.test.mjs" />
-    <File Path="eng/verify-feed.ps1" />
-  </Folder>
-  <Folder Name="/solution items/.github/workflows/">
-    <File Path=".github/workflows/ci.yml" />
-    <File Path=".github/workflows/publish.yml" />
-  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Broiler.Hosting.Contracts/Broiler.Hosting.Contracts.csproj" />
     <Project Path="src/Broiler.Hosting.WebAssembly/Broiler.Hosting.WebAssembly.csproj" />

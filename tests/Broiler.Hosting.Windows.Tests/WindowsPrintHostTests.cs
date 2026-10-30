@@ -96,13 +96,13 @@ public sealed class WindowsPrintHostTests
                 Dpi = 150,
             });
 
-            UiPrintResult result = await new WindowsPrintHost().PrintToFileAsync(job, output);
+            UiPrintResult result = await new WindowsPrintHost().PrintToFileAsync(job, output, TestContext.Current.CancellationToken);
 
             Assert.Equal(UiPrintOutcome.Printed, result.Outcome);
             Assert.Equal(4, result.PagesPrinted);
             Assert.True(File.Exists(output), "The PDF printer wrote nothing.");
 
-            string pdf = Encoding.Latin1.GetString(await File.ReadAllBytesAsync(output));
+            string pdf = Encoding.Latin1.GetString(await File.ReadAllBytesAsync(output, TestContext.Current.CancellationToken));
             Assert.StartsWith("%PDF", pdf, StringComparison.Ordinal);
             Assert.Equal(4, CountPages(pdf));
             Assert.Contains("792", pdf, StringComparison.Ordinal);
@@ -122,7 +122,7 @@ public sealed class WindowsPrintHostTests
             PageRanges = [new UiPageRange(5, 6)],
         });
 
-        UiPrintResult result = await new WindowsPrintHost().PrintAsync(job);
+        UiPrintResult result = await new WindowsPrintHost().PrintAsync(job, TestContext.Current.CancellationToken);
 
         Assert.Equal(UiPrintOutcome.Failed, result.Outcome);
     }

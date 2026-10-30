@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -54,7 +54,7 @@ jobs:
         run: node --test eng/resolve-preview-version.test.mjs
 
       - name: Verify one assembly per name
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: bash ./scripts/check-component-graph.sh
         env:
           CONFIGURATION: Release
