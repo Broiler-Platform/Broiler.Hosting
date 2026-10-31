@@ -23,6 +23,9 @@ export function createCanvasHost({ canvas, input, container, dispatch, render, c
         send('pointerCancel', { id });
         if (canvas.hasPointerCapture?.(id)) canvas.releasePointerCapture(id);
     };
+    // Broiler owns context menus inside its drawing/text-input surface.
+    // Cancel only the browser default; pointer events still reach the app.
+    for (const target of [canvas, input]) on(target, 'contextmenu', event => event.preventDefault());
     on(canvas, 'pointerdown', event => {
         pointers.add(event.pointerId); canvas.setPointerCapture?.(event.pointerId);
         canvas.focus({ preventScroll: true });
