@@ -77,7 +77,8 @@ export function createCanvasHost({ canvas, input, container, dispatch, render, c
     });
     const cancelComposition = event => { if (composing) { composing = false; composition('cancel', event); input.value = ''; } };
     on(input, 'blur', cancelComposition);
-    for (const kind of ['copy', 'cut', 'paste']) on(input, kind, event => {
+    // Trusted clipboard events reach whichever surface owns focus (text input or canvas).
+    for (const kind of ['copy', 'cut', 'paste']) for (const target of [input, canvas]) on(target, kind, event => {
         if (!event.isTrusted || !event.clipboardData) return;
         const result = dispatch.clipboard?.({ kind, text: kind === 'paste' ? event.clipboardData.getData('text/plain') : null });
         if (!result?.handled) return;
@@ -116,6 +117,32 @@ export function createCanvasHost({ canvas, input, container, dispatch, render, c
             observer.disconnect(); dprQuery?.removeEventListener('change', dprChanged);
             for (const cleanup of cleanups) cleanup();
             keys.clear(); input.value = '';
+        },
+    };
+}
+
+// Async Clipboard transport for commands outside trusted copy/cut/paste events (menus, toolbars).
+// Pairs with the managed BrowserClipboard. Both calls resolve; refusal is reported, never thrown.
+export function createClipboard() {
+    const legacyWrite = text => {
+        // Fallback for non-secure contexts without navigator.clipboard; needs a user activation.
+        const area = document.createElement('textarea');
+        area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+        const focused = document.activeElement;
+        document.body.append(area); area.select();
+        try { return document.execCommand('copy'); } catch { return false; } finally { area.remove(); focused?.focus?.({ preventScroll: true }); }
+    };
+    return {
+        async writeText(text) {
+            text = String(text ?? '');
+            if (navigator.clipboard?.writeText) {
+                try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
+            }
+            return legacyWrite(text);
+        },
+        async readText() {
+            if (!navigator.clipboard?.readText) return null;
+            try { return await navigator.clipboard.readText(); } catch { return null; }
         },
     };
 }
