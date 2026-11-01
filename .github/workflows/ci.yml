@@ -42,6 +42,16 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Set up Python for browser package asset regression
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Verify browser package asset registration
+        run: python -m unittest discover -s eng -p test_web_assets.py -v
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+
       - name: Install Android workload
         run: dotnet workload install android
 

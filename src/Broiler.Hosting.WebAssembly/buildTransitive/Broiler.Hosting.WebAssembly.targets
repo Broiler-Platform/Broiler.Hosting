@@ -1,5 +1,29 @@
 <Project>
-  <ItemGroup Condition="'$(UsingMicrosoftNETSdkWebAssembly)' == 'true' Or '$(RuntimeIdentifier)' == 'browser-wasm'">
-    <Content Include="$(MSBuildThisFileDirectory)../browser/broiler.hosting.webassembly.js" Link="wwwroot/broiler.hosting.webassembly.js" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-  </ItemGroup>
+  <PropertyGroup>
+    <BroilerHostingBrowserRoot>$(MSBuildThisFileDirectory)../browser/</BroilerHostingBrowserRoot>
+  </PropertyGroup>
+  <Target Name="RegisterBroilerHostingBrowserAsset"
+          BeforeTargets="ResolveProjectStaticWebAssets"
+          DependsOnTargets="ResolveStaticWebAssetsConfiguration"
+          Condition="'$(UsingMicrosoftNETSdkWebAssembly)' == 'true' Or '$(RuntimeIdentifier)' == 'browser-wasm'">
+    <ItemGroup>
+      <Content Remove="@(Content)" Condition="'%(Content.Filename)%(Content.Extension)' == 'broiler.hosting.webassembly.js'" />
+      <_BroilerHostingBrowserAsset Include="$(BroilerHostingBrowserRoot)broiler.hosting.webassembly.js"
+                                  RelativePath="broiler.hosting.webassembly.js" />
+    </ItemGroup>
+    <DefineStaticWebAssets CandidateAssets="@(_BroilerHostingBrowserAsset)"
+                          SourceId="$(PackageId)" SourceType="Computed"
+                          ContentRoot="$(BroilerHostingBrowserRoot)" BasePath="$(StaticWebAssetBasePath)"
+                          AssetKind="All" AssetMode="All" AssetRole="Primary"
+                          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"
+                          FingerprintCandidates="$(StaticWebAssetsFingerprintContent)"
+                          FingerprintPatterns="@(StaticWebAssetFingerprintPattern)">
+      <Output TaskParameter="Assets" ItemName="StaticWebAsset" />
+      <Output TaskParameter="Assets" ItemName="_BroilerHostingDefinedAsset" />
+    </DefineStaticWebAssets>
+    <DefineStaticWebAssetEndpoints CandidateAssets="@(_BroilerHostingDefinedAsset)"
+                                  ContentTypeMappings="@(StaticWebAssetContentTypeMapping)">
+      <Output TaskParameter="Endpoints" ItemName="StaticWebAssetEndpoint" />
+    </DefineStaticWebAssetEndpoints>
+  </Target>
 </Project>
