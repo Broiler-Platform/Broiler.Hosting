@@ -22,6 +22,7 @@
   <ItemGroup>
     <PackageReference Include="Broiler.UI" />
     <PackageReference Include="Broiler.UI.PrintDialog" />
+    <PackageReference Include="Broiler.UI.ScanDialog" />
     <PackageReference Include="Broiler.UI.Standard" />
     <PackageReference Include="Broiler.Graphics" />
     <PackageReference Include="Broiler.Graphics.Linux" />
@@ -34,5 +35,11 @@
     <PackageReference Include="Broiler.Input.Keyboard.Linux" />
     <PackageReference Include="Broiler.Input.Mouse" />
     <PackageReference Include="Broiler.Input.Mouse.Linux" />
+    <PackageReference Include="Broiler.Input.Scanner" />
+    <PackageReference Include="Broiler.Input.Scanner.Linux" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\ScannerInputScanHost.cs" Link="Scanning\ScannerInputScanHost.cs" />
   </ItemGroup>
 </Project>

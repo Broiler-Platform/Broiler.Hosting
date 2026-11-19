@@ -15,6 +15,7 @@
   <ItemGroup>
     <PackageVersion Include="Broiler.UI" Version="0.1.0-preview.35" />
     <PackageVersion Include="Broiler.UI.PrintDialog" Version="0.1.0-preview.35" />
+    <PackageVersion Include="Broiler.UI.ScanDialog" Version="0.1.0-preview.35" />
     <PackageVersion Include="Broiler.UI.Standard" Version="0.1.0-preview.35" />
     <PackageVersion Include="Broiler.UI.Button" Version="0.1.0-preview.35" />
     <PackageVersion Include="Broiler.UI.Button.Standard" Version="0.1.0-preview.35" />
@@ -63,6 +64,9 @@
     <PackageVersion Include="Broiler.Input.Touch.Android" Version="0.1.0-preview.9" />
     <PackageVersion Include="Broiler.Input.Linux" Version="0.1.0-preview.9" />
     <PackageVersion Include="Broiler.Input.Android" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Scanner" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Scanner.Linux" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Scanner.Windows" Version="0.1.0-preview.9" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
