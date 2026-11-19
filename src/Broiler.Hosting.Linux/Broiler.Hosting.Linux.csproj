@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <PackageReference Include="Broiler.UI" />
+    <PackageReference Include="Broiler.UI.PrintDialog" />
     <PackageReference Include="Broiler.UI.Standard" />
     <PackageReference Include="Broiler.Graphics" />
     <PackageReference Include="Broiler.Graphics.Linux" />

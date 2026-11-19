@@ -23,6 +23,7 @@
   <ItemGroup>
     <PackageReference Include="Broiler.UI" />
     <PackageReference Include="Broiler.Graphics" />
+    <PackageReference Include="Broiler.UI.PrintDialog" />
   </ItemGroup>
 
   <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">

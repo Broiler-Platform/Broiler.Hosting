@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <PackageReference Include="Broiler.UI" />
+    <PackageReference Include="Broiler.UI.PrintDialog" />
     <PackageReference Include="Broiler.UI.Standard" />
     <PackageReference Include="Broiler.UI.Button" />
     <PackageReference Include="Broiler.UI.ComboBox" />
