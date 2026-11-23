@@ -78,18 +78,12 @@ public sealed class AutomationGeometryTests
         nint array = range.GetBoundingRectangles();
         try
         {
-            Assert.Equal(0, SafeArrayGetLBound(array, 1, out int lower));
-            Assert.Equal(0, SafeArrayGetUBound(array, 1, out int upper));
+            Assert.Equal(0, OleAutNative.SafeArrayGetLBound(array, 1, out int lower));
+            Assert.Equal(0, OleAutNative.SafeArrayGetUBound(array, 1, out int upper));
             return upper - lower + 1;
         }
         finally { OleAutNative.SafeArrayDestroy(array); }
     }
-
-    [DllImport("oleaut32.dll")]
-    private static extern int SafeArrayGetLBound(nint array, uint dimension, out int bound);
-
-    [DllImport("oleaut32.dll")]
-    private static extern int SafeArrayGetUBound(nint array, uint dimension, out int bound);
 
     [Fact]
     public void ElementsAreClippedToTheWindowSurface()

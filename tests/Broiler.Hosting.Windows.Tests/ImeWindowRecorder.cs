@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Broiler.Native.Windows;
+using Broiler.Native.Windows.Input;
 using Xunit;
 
 namespace Broiler.Hosting.Windows.Tests;
@@ -29,7 +30,7 @@ internal sealed partial class ImeWindowRecorder : IDisposable
 
     public List<(uint Message, nint WParam, nint LParam)> Received { get; } = [];
 
-    public static nint DefaultImeWindow(nint window) => ImmGetDefaultIMEWnd(window);
+    public static nint DefaultImeWindow(nint window) => ImmNative.ImmGetDefaultIMEWnd(window);
 
     private nint Record(nint hWnd, uint message, nint wParam, nint lParam, nuint id, nuint data)
     {
@@ -39,7 +40,4 @@ internal sealed partial class ImeWindowRecorder : IDisposable
     }
 
     public void Dispose() => WindowNative.RemoveWindowSubclass(_imeWindow, _recorder, 1);
-
-    [LibraryImport("imm32.dll")]
-    private static partial nint ImmGetDefaultIMEWnd(nint hWnd);
 }

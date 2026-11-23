@@ -44,9 +44,9 @@
     <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.19" />
     <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="0.1.0-preview.19" />
     <PackageVersion Include="Broiler.Graphics.Android" Version="$(BroilerGraphicsVersion)" />
-    <PackageVersion Include="Broiler.Native" Version="0.1.0-preview.11" />
-    <PackageVersion Include="Broiler.Native.Windows" Version="0.1.0-preview.11" />
-    <PackageVersion Include="Broiler.Native.Linux" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Native" Version="0.1.0-preview.12" />
+    <PackageVersion Include="Broiler.Native.Windows" Version="0.1.0-preview.12" />
+    <PackageVersion Include="Broiler.Native.Linux" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Native.Android" Version="$(BroilerNativeVersion)" />
     <PackageVersion Include="Broiler.Input" Version="0.1.0-preview.9" />
     <PackageVersion Include="Broiler.Input.Keyboard" Version="0.1.0-preview.9" />

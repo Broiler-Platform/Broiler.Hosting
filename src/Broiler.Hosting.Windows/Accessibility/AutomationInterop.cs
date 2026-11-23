@@ -36,15 +36,11 @@ internal static partial class AutomationInterop
     public static COMException ElementNotEnabledException() => new("The element is not enabled.", ElementNotEnabled);
 
     /// <summary>Releases every reference UIA holds to a provider, so a client's next call on it fails as not available.</summary>
-    [LibraryImport("UIAutomationCore.dll")]
-    public static partial int UiaDisconnectProvider(INativeSimple provider);
+    public static int UiaDisconnectProvider(INativeSimple provider) => UiaNative.UiaDisconnectProvider(provider);
 
     /// <summary>
     /// UiaReturnRawElementProvider with a null provider, called when the window is destroyed: UIA then
     /// releases the providers it obtained for that window.
     /// </summary>
-    [LibraryImport("UIAutomationCore.dll", EntryPoint = "UiaReturnRawElementProvider")]
-    private static partial nint UiaReturnRawElementProvider(nint hwnd, nint wParam, nint lParam, nint provider);
-
-    public static void UiaReleaseWindowProviders(nint hwnd) => UiaReturnRawElementProvider(hwnd, 0, 0, 0);
+    public static void UiaReleaseWindowProviders(nint hwnd) => UiaNative.UiaReturnRawElementProvider(hwnd, 0, 0, 0);
 }

@@ -452,7 +452,7 @@ public sealed class AutomationProviderMappingTests
         using (System.Runtime.InteropServices.Marshalling.ComVariant described = AutomationMarshalling.ToVariant(peer.GetPropertyValue(AutomationInterop.DescribedByPropertyId)))
         {
             Assert.Equal(System.Runtime.InteropServices.VarEnum.VT_ARRAY | System.Runtime.InteropServices.VarEnum.VT_UNKNOWN, described.VarType);
-            Assert.Equal(0, SafeArrayGetUBound(described.GetRawDataRef<nint>(), 1, out int upper));
+            Assert.Equal(0, Broiler.Native.Windows.OleAutNative.SafeArrayGetUBound(described.GetRawDataRef<nint>(), 1, out int upper));
             Assert.Equal(1, upper);
         }
 
@@ -642,9 +642,6 @@ public sealed class AutomationProviderMappingTests
 
     private static string[] Names(object? providers) =>
         Assert.IsType<IRawElementProviderSimple[]>(providers).Select(provider => provider.GetPropertyValue(UiaNative.UiaNamePropertyId) as string ?? string.Empty).ToArray();
-
-    [System.Runtime.InteropServices.DllImport("oleaut32.dll")]
-    private static extern int SafeArrayGetUBound(nint array, uint dimension, out int bound);
 
     /// <summary>Shows and hides content of its own without being an element, as a host-side panel might.</summary>
     private sealed class Details : IUiExpandable
