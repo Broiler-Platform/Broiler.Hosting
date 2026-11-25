@@ -39,34 +39,34 @@
     <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="0.1.0-preview.36" />
     <PackageVersion Include="Broiler.UI.TreeView" Version="0.1.0-preview.36" />
     <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="0.1.0-preview.36" />
-    <PackageVersion Include="Broiler.Graphics" Version="0.1.0-preview.19" />
-    <PackageVersion Include="Broiler.Graphics.Windows" Version="0.1.0-preview.19" />
-    <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.19" />
-    <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="0.1.0-preview.19" />
+    <PackageVersion Include="Broiler.Graphics" Version="0.1.0-preview.20" />
+    <PackageVersion Include="Broiler.Graphics.Windows" Version="0.1.0-preview.20" />
+    <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.20" />
+    <PackageVersion Include="Broiler.Graphics.Linux.OpenGL" Version="0.1.0-preview.20" />
     <PackageVersion Include="Broiler.Graphics.Android" Version="$(BroilerGraphicsVersion)" />
     <PackageVersion Include="Broiler.Native" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Native.Windows" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Native.Linux" Version="0.1.0-preview.12" />
     <PackageVersion Include="Broiler.Native.Android" Version="$(BroilerNativeVersion)" />
-    <PackageVersion Include="Broiler.Input" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Keyboard" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Keyboard" Version="0.1.0-preview.11" />
     <PackageVersion Include="Broiler.Input.Keyboard.Windows" Version="$(BroilerInputVersion)" />
-    <PackageVersion Include="Broiler.Input.Keyboard.Linux" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Keyboard.Android" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Mouse" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Keyboard.Linux" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Keyboard.Android" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Mouse" Version="0.1.0-preview.11" />
     <PackageVersion Include="Broiler.Input.Mouse.Windows" Version="$(BroilerInputVersion)" />
-    <PackageVersion Include="Broiler.Input.Mouse.Linux" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Mouse.Linux" Version="0.1.0-preview.11" />
     <PackageVersion Include="Broiler.Input.Pen" Version="$(BroilerInputVersion)" />
-    <PackageVersion Include="Broiler.Input.Pen.Android" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Pen.Android" Version="0.1.0-preview.11" />
     <PackageVersion Include="Broiler.Input.Text" Version="$(BroilerInputVersion)" />
-    <PackageVersion Include="Broiler.Input.Text.Android" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Text.Android" Version="0.1.0-preview.11" />
     <PackageVersion Include="Broiler.Input.Touch" Version="$(BroilerInputVersion)" />
-    <PackageVersion Include="Broiler.Input.Touch.Android" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Linux" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Android" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Scanner" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Scanner.Linux" Version="0.1.0-preview.9" />
-    <PackageVersion Include="Broiler.Input.Scanner.Windows" Version="0.1.0-preview.9" />
+    <PackageVersion Include="Broiler.Input.Touch.Android" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Linux" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Android" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Scanner" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Scanner.Linux" Version="0.1.0-preview.11" />
+    <PackageVersion Include="Broiler.Input.Scanner.Windows" Version="0.1.0-preview.11" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.12.0" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
