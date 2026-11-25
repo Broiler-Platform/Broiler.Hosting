@@ -13,32 +13,32 @@
     <BroilerNativePackageVersion Condition="'$(BroilerNativePackageVersion)' == ''">0.1.0-preview.10</BroilerNativePackageVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Broiler.UI" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.PrintDialog" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ScanDialog" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Button" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Button.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ComboBox" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ComboBox.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Edit" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Forms.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Label.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Edit.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.FormatCodeView.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ListView" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ListView.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Panel.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.RichEdit" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.RichEdit.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.SpinBox.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.TabView" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.TabView.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.ToggleButton.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.TreeView" Version="0.1.0-preview.35" />
-    <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="0.1.0-preview.35" />
+    <PackageVersion Include="Broiler.UI" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.PrintDialog" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ScanDialog" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Button" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Button.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ComboBox" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ComboBox.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Edit" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Forms.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Label.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Edit.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.FormatCodeView.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ListView" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ListView.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Panel.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.RichEdit" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.RichEdit.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ScrollView.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.SpinBox.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.TabView" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.TabView.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.ToggleButton.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.Toolbar.Standard" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.TreeView" Version="0.1.0-preview.36" />
+    <PackageVersion Include="Broiler.UI.TreeView.Standard" Version="0.1.0-preview.36" />
     <PackageVersion Include="Broiler.Graphics" Version="0.1.0-preview.19" />
     <PackageVersion Include="Broiler.Graphics.Windows" Version="0.1.0-preview.19" />
     <PackageVersion Include="Broiler.Graphics.Linux" Version="0.1.0-preview.19" />
